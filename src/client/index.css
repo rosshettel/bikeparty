@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    @apply bg-gray-50 text-gray-900 font-sans;
+  }
+}
+
+/* react-big-calendar base styles */
+.rbc-calendar {
+  @apply bg-white rounded-xl shadow;
+}
+.rbc-header {
+  @apply py-2 text-sm font-semibold text-gray-600 border-b border-gray-200;
+}
+.rbc-event {
+  @apply bg-green-500 border-green-600 rounded text-xs font-medium;
+}
+.rbc-event.rbc-selected {
+  @apply bg-green-700;
+}
+.rbc-today {
+  @apply bg-green-50;
+}
+.rbc-toolbar button {
+  @apply px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 transition-colors;
+}
+.rbc-toolbar button.rbc-active {
+  @apply bg-green-500 text-white border-green-500;
+}
+.rbc-toolbar-label {
+  @apply text-lg font-bold text-gray-800;
+}
