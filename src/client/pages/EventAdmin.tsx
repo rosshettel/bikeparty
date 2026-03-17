@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, MapPin, ExternalLink, Plus, Trash2, CheckCircle,
-  Send, Users, MessageSquare, UserCheck, AlertTriangle, Copy, Bike
+  ArrowLeft, MapPin, ExternalLink, Plus, Trash2,
+  Send, Users, MessageSquare, UserCheck, AlertTriangle, Bike, X, Search
 } from 'lucide-react'
 
 interface Destination {
@@ -17,6 +17,12 @@ interface RsvpItem {
   status: 'pending' | 'yes' | 'no'
   destinationVote?: Destination
   member?: { name: string; phone: string }
+}
+
+interface Member {
+  id: string
+  name: string
+  phone: string
 }
 
 interface BikeEvent {
@@ -39,13 +45,115 @@ interface EventData {
   delegates?: Array<{ id: string; delegateName: string; token: string }>
 }
 
-interface EventAdminPageProps {
-  isDelegate?: boolean
-  delegateToken?: string
-  delegateName?: string
+// Modal showing a list of riders for a given RSVP status
+function RsvpModal({ title, rsvps, onClose }: {
+  title: string
+  rsvps: RsvpItem[]
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[70vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <h3 className="font-semibold">{title} ({rsvps.length})</h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={16} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-4">
+          {rsvps.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">Nobody yet</p>
+          ) : (
+            <div className="space-y-2">
+              {rsvps.map(r => (
+                <div key={r.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                  <div>
+                    <p className="text-sm font-medium">{r.member?.name || 'Unknown'}</p>
+                    <p className="text-xs text-gray-400">{r.member?.phone}</p>
+                  </div>
+                  {r.destinationVote && (
+                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                      {r.destinationVote.name}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
-function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: EventAdminPageProps) {
+// Modal to search and select a rider to delegate admin
+function DelegateModal({ onSelect, onClose }: {
+  onSelect: (member: Member) => void
+  onClose: () => void
+}) {
+  const [members, setMembers] = useState<Member[]>([])
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const token = localStorage.getItem('adminToken') || ''
+
+  useEffect(() => {
+    fetch('/api/admin/members', { headers: { 'x-admin-token': token } })
+      .then(r => r.json())
+      .then(data => { setMembers(Array.isArray(data) ? data : []); setLoading(false) })
+  }, [])
+
+  const filtered = members.filter(m =>
+    m.name.toLowerCase().includes(search.toLowerCase()) ||
+    m.phone.includes(search)
+  )
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[70vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <h3 className="font-semibold">Choose a Rider</h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={16} /></button>
+        </div>
+        <div className="p-3 border-b border-gray-100">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by name or phone..."
+              autoFocus
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+            />
+          </div>
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">No riders found</p>
+          ) : (
+            filtered.map(m => (
+              <button
+                key={m.id}
+                onClick={() => onSelect(m)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-green-50 text-left transition-colors border-b border-gray-50 last:border-0"
+              >
+                <div>
+                  <p className="text-sm font-medium">{m.name}</p>
+                  <p className="text-xs text-gray-400">{m.phone}</p>
+                </div>
+                <span className="text-xs text-green-600 font-medium">Select</span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function EventAdmin() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const adminToken = localStorage.getItem('adminToken') || ''
@@ -55,20 +163,20 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
   const [error, setError] = useState('')
   const [actionMsg, setActionMsg] = useState('')
 
+  // Modals
+  const [rsvpModal, setRsvpModal] = useState<'yes' | 'no' | 'pending' | null>(null)
+  const [showDelegateModal, setShowDelegateModal] = useState(false)
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+
   // Forms
   const [newDest, setNewDest] = useState({ name: '', mapsUrl: '' })
   const [blastMsg, setBlastMsg] = useState('')
   const [blastAudience, setBlastAudience] = useState<'confirmed' | 'all'>('confirmed')
-  const [delegateForm, setDelegateForm] = useState({ name: '', memberId: '' })
-  const [delegateLink, setDelegateLink] = useState('')
   const [cancelMsg, setCancelMsg] = useState('')
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(isDelegate ? { 'x-event-token': delegateToken! } : { 'x-admin-token': adminToken }),
-  }
+  useEffect(() => { if (!adminToken) navigate('/admin') }, [])
 
+  const headers = { 'Content-Type': 'application/json', 'x-admin-token': adminToken }
   const adminFetch = (path: string, opts: RequestInit = {}) =>
     fetch(`/api/admin${path}`, { ...opts, headers: { ...headers, ...((opts.headers as Record<string, string>) || {}) } })
 
@@ -81,8 +189,7 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
     try {
       const res = await adminFetch(`/events/${id}`)
       if (!res.ok) { setError('Failed to load event'); setLoading(false); return }
-      const d = await res.json()
-      setData(d)
+      setData(await res.json())
     } catch {
       setError('Network error')
     }
@@ -96,7 +203,6 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
       <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600" />
     </div>
   )
-
   if (error || !data) return (
     <div className="min-h-screen flex items-center justify-center">
       <p className="text-red-600">{error || 'Event not found'}</p>
@@ -109,49 +215,42 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
   const pending = rsvps.filter(r => r.status === 'pending')
   const isCancelled = event.status === 'cancelled'
 
-  // Vote tallies
   const voteTallies: Record<string, number> = {}
   confirmed.forEach(r => {
-    if (r.destinationVote?.id) {
-      voteTallies[r.destinationVote.id] = (voteTallies[r.destinationVote.id] || 0) + 1
-    }
+    if (r.destinationVote?.id) voteTallies[r.destinationVote.id] = (voteTallies[r.destinationVote.id] || 0) + 1
   })
+
+  const rsvpModalList = rsvpModal === 'yes' ? confirmed : rsvpModal === 'no' ? declined : pending
+  const rsvpModalTitle = rsvpModal === 'yes' ? 'Going' : rsvpModal === 'no' ? 'Not Going' : 'No Response'
 
   const addDestination = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newDest.name.trim()) return
-    const res = await adminFetch(`/events/${id}/destinations`, {
-      method: 'POST',
-      body: JSON.stringify(newDest),
-    })
+    const res = await adminFetch(`/events/${id}/destinations`, { method: 'POST', body: JSON.stringify(newDest) })
     if (res.ok) { setNewDest({ name: '', mapsUrl: '' }); await load(); flash('Destination added') }
   }
 
   const deleteDestination = async (destId: string) => {
     await adminFetch(`/events/${id}/destinations/${destId}`, { method: 'DELETE' })
-    await load()
-    flash('Destination removed')
+    await load(); flash('Destination removed')
   }
 
   const selectDestination = async (destId: string) => {
     await adminFetch(`/events/${id}/destinations/${destId}/select`, { method: 'POST' })
-    await load()
-    flash('Final destination set!')
+    await load(); flash('Final destination set!')
   }
 
   const sendInvites = async () => {
     const res = await adminFetch(`/events/${id}/invite`, { method: 'POST' })
     const d = await res.json()
-    if (res.ok) flash(`Invites sent to ${d.sent} riders!`)
-    else flash(`Error: ${d.error}`)
+    flash(res.ok ? `Invites sent to ${d.sent} riders!` : `Error: ${d.error}`)
   }
 
   const sendBlast = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!blastMsg.trim()) return
     const res = await adminFetch(`/events/${id}/blast`, {
-      method: 'POST',
-      body: JSON.stringify({ message: blastMsg, audience: blastAudience }),
+      method: 'POST', body: JSON.stringify({ message: blastMsg, audience: blastAudience }),
     })
     const d = await res.json()
     if (res.ok) { setBlastMsg(''); flash(`Blast sent to ${d.sent} riders!`) }
@@ -165,22 +264,19 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
     else flash(`Error: ${d.error}`)
   }
 
-  const createDelegate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!delegateForm.name.trim()) return
+  const delegateTo = async (member: Member) => {
+    setShowDelegateModal(false)
     const res = await adminFetch(`/events/${id}/delegate`, {
-      method: 'POST',
-      body: JSON.stringify({ delegateName: delegateForm.name }),
+      method: 'POST', body: JSON.stringify({ memberId: member.id }),
     })
     const d = await res.json()
-    if (res.ok) { setDelegateLink(d.link); setDelegateForm({ name: '', memberId: '' }); await load() }
+    if (res.ok) { await load(); flash(`Admin link sent to ${member.name} via SMS!`) }
     else flash(`Error: ${d.error}`)
   }
 
   const cancelEvent = async () => {
     const res = await adminFetch(`/events/${id}/cancel`, {
-      method: 'POST',
-      body: JSON.stringify({ message: cancelMsg || undefined }),
+      method: 'POST', body: JSON.stringify({ message: cancelMsg || undefined }),
     })
     if (res.ok) { await load(); setShowCancelConfirm(false); flash('Event cancelled') }
   }
@@ -190,12 +286,9 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center gap-4">
-          {!isDelegate && (
-            <button onClick={() => navigate('/admin/calendar')} className="text-gray-400 hover:text-gray-600">
-              <ArrowLeft size={20} />
-            </button>
-          )}
-          {isDelegate && <Bike size={24} className="text-green-600" />}
+          <button onClick={() => navigate('/admin/calendar')} className="text-gray-400 hover:text-gray-600">
+            <ArrowLeft size={20} />
+          </button>
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <h1 className="text-lg sm:text-xl font-bold">{event.title}</h1>
@@ -203,10 +296,7 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
                 <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs font-medium rounded-full">Cancelled</span>
               )}
             </div>
-            <p className="text-sm text-gray-500">
-              {event.eventDate} at {event.meetTime}
-              {isDelegate && delegateName && ` • Admin: ${delegateName}`}
-            </p>
+            <p className="text-sm text-gray-500">{event.eventDate} at {event.meetTime}</p>
           </div>
         </div>
       </div>
@@ -217,52 +307,46 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
         </div>
       )}
 
+      {rsvpModal && (
+        <RsvpModal
+          title={rsvpModalTitle}
+          rsvps={rsvpModalList}
+          onClose={() => setRsvpModal(null)}
+        />
+      )}
+
+      {showDelegateModal && (
+        <DelegateModal
+          onSelect={delegateTo}
+          onClose={() => setShowDelegateModal(false)}
+        />
+      )}
+
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* RSVP Stats */}
+        {/* RSVP Stats — clickable */}
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: 'Going', count: confirmed.length, color: 'bg-green-50 text-green-700 border-green-200' },
-            { label: 'Not Going', count: declined.length, color: 'bg-red-50 text-red-700 border-red-200' },
-            { label: 'No Response', count: pending.length, color: 'bg-gray-50 text-gray-600 border-gray-200' },
+            { label: 'Going', count: confirmed.length, key: 'yes' as const, color: 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' },
+            { label: 'Not Going', count: declined.length, key: 'no' as const, color: 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100' },
+            { label: 'No Response', count: pending.length, key: 'pending' as const, color: 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100' },
           ].map(s => (
-            <div key={s.label} className={`rounded-xl border p-4 text-center ${s.color}`}>
+            <button
+              key={s.label}
+              onClick={() => setRsvpModal(s.key)}
+              className={`rounded-xl border p-4 text-center transition-colors cursor-pointer ${s.color}`}
+            >
               <div className="text-2xl font-bold">{s.count}</div>
               <div className="text-xs font-medium mt-1">{s.label}</div>
-            </div>
+            </button>
           ))}
         </div>
-
-        {/* Confirmed riders list */}
-        {confirmed.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="font-semibold text-sm text-gray-700 mb-3 flex items-center gap-2">
-              <Users size={16} /> Confirmed Riders
-            </h2>
-            <div className="space-y-2">
-              {confirmed.map(r => (
-                <div key={r.id} className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{r.member?.name || 'Unknown'}</span>
-                  {r.destinationVote && (
-                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                      voted: {r.destinationVote.name}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Destinations */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h2 className="font-semibold text-sm text-gray-700 mb-4 flex items-center gap-2">
             <MapPin size={16} /> Destinations
           </h2>
-
-          {destinations.length === 0 && (
-            <p className="text-sm text-gray-400 mb-4">No destinations yet</p>
-          )}
-
+          {destinations.length === 0 && <p className="text-sm text-gray-400 mb-4">No destinations yet</p>}
           <div className="space-y-3 mb-4">
             {destinations.map(dest => {
               const votes = voteTallies[dest.id] || 0
@@ -270,7 +354,7 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
               return (
                 <div key={dest.id} className={`flex items-center gap-3 p-3 rounded-lg border ${isFinal ? 'border-green-400 bg-green-50' : 'border-gray-100 bg-gray-50'}`}>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-sm">{dest.name}</span>
                       {isFinal && <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">FINAL</span>}
                       {votes > 0 && <span className="text-xs text-gray-500">{votes} vote{votes !== 1 ? 's' : ''}</span>}
@@ -284,18 +368,13 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
                   </div>
                   <div className="flex items-center gap-1">
                     {!isFinal && (
-                      <button
-                        onClick={() => selectDestination(dest.id)}
-                        className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2.5 py-1 rounded-lg font-medium transition-colors"
-                        title="Set as final destination"
-                      >
+                      <button onClick={() => selectDestination(dest.id)}
+                        className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2.5 py-1 rounded-lg font-medium transition-colors">
                         Select
                       </button>
                     )}
-                    <button
-                      onClick={() => deleteDestination(dest.id)}
-                      className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    >
+                    <button onClick={() => deleteDestination(dest.id)}
+                      className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -303,26 +382,16 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
               )
             })}
           </div>
-
           <form onSubmit={addDestination} className="flex gap-2">
             <div className="flex-1 space-y-2">
-              <input
-                type="text"
-                placeholder="Destination name"
-                value={newDest.name}
+              <input type="text" placeholder="Destination name" value={newDest.name}
                 onChange={e => setNewDest(d => ({ ...d, name: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-              />
-              <input
-                type="url"
-                placeholder="Google Maps bike URL (optional)"
-                value={newDest.mapsUrl}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" />
+              <input type="url" placeholder="Google Maps bike URL (optional)" value={newDest.mapsUrl}
                 onChange={e => setNewDest(d => ({ ...d, mapsUrl: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-              />
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" />
             </div>
-            <button type="submit"
-              className="self-start bg-green-600 hover:bg-green-700 text-white p-2.5 rounded-lg transition-colors">
+            <button type="submit" className="self-start bg-green-600 hover:bg-green-700 text-white p-2.5 rounded-lg transition-colors">
               <Plus size={18} />
             </button>
           </form>
@@ -334,53 +403,38 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
             <h2 className="font-semibold text-sm text-gray-700 flex items-center gap-2">
               <MessageSquare size={16} /> SMS Actions
             </h2>
-
-            {/* Send Invites */}
             <div className="border border-gray-100 rounded-lg p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium">Send 2-Day Invites</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {event.invitesSentAt
-                      ? `Sent ${new Date(event.invitesSentAt).toLocaleString()}`
-                      : 'Text all riders asking for RSVP + destination vote'}
+                    {event.invitesSentAt ? `Sent ${new Date(event.invitesSentAt).toLocaleString()}` : 'Text all riders asking for RSVP + destination vote'}
                   </p>
                 </div>
-                <button
-                  onClick={sendInvites}
-                  className="flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors"
-                >
+                <button onClick={sendInvites}
+                  className="flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors">
                   <Send size={14} /> Send
                 </button>
               </div>
             </div>
-
-            {/* Group Chat */}
             <div className="border border-gray-100 rounded-lg p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium">Create Group Chat</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {event.groupChatCreatedAt
-                      ? `Created ${new Date(event.groupChatCreatedAt).toLocaleString()}`
-                      : `Create Twilio group with ${confirmed.length} confirmed riders`}
+                    {event.groupChatCreatedAt ? `Created ${new Date(event.groupChatCreatedAt).toLocaleString()}` : `Twilio group with ${confirmed.length} confirmed riders`}
                   </p>
                 </div>
-                <button
-                  onClick={createGroupChat}
-                  disabled={confirmed.length === 0}
-                  className="flex-shrink-0 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors"
-                >
+                <button onClick={createGroupChat} disabled={confirmed.length === 0}
+                  className="flex-shrink-0 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors">
                   <Users size={14} /> Create
                 </button>
               </div>
             </div>
-
-            {/* Blast */}
             <div className="border border-gray-100 rounded-lg p-4">
               <p className="text-sm font-medium mb-2">Text Blast</p>
               <form onSubmit={sendBlast} className="space-y-2">
-                <div className="flex gap-2 text-xs">
+                <div className="flex gap-3 text-xs">
                   <label className="flex items-center gap-1 cursor-pointer">
                     <input type="radio" checked={blastAudience === 'confirmed'} onChange={() => setBlastAudience('confirmed')} />
                     Confirmed riders only
@@ -390,13 +444,9 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
                     All members
                   </label>
                 </div>
-                <textarea
-                  placeholder="Your message..."
-                  value={blastMsg}
-                  onChange={e => setBlastMsg(e.target.value)}
-                  rows={3}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"
-                />
+                <textarea placeholder="Your message..." value={blastMsg}
+                  onChange={e => setBlastMsg(e.target.value)} rows={3}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none" />
                 <button type="submit"
                   className="w-full bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors">
                   <Send size={14} /> Send Blast
@@ -406,51 +456,33 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
           </div>
         )}
 
-        {/* Delegation (admin only) */}
-        {!isDelegate && (
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="font-semibold text-sm text-gray-700 mb-4 flex items-center gap-2">
+        {/* Delegation */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-sm text-gray-700 flex items-center gap-2">
               <UserCheck size={16} /> Delegate Admin Access
             </h2>
-            <form onSubmit={createDelegate} className="space-y-2">
-              <input
-                type="text"
-                placeholder="Delegate's name"
-                value={delegateForm.name}
-                onChange={e => setDelegateForm(f => ({ ...f, name: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-              />
-              <button type="submit"
-                className="w-full border border-green-600 text-green-700 hover:bg-green-50 py-2 rounded-lg text-sm font-medium transition-colors">
-                Generate Link
-              </button>
-            </form>
-
-            {delegateLink && (
-              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-xs text-gray-600 mb-1">Share this link:</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 text-xs break-all text-gray-800">{delegateLink}</code>
-                  <button
-                    onClick={() => { navigator.clipboard.writeText(delegateLink); flash('Copied!') }}
-                    className="flex-shrink-0 p-1.5 text-green-600 hover:bg-green-100 rounded"
-                  >
-                    <Copy size={14} />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {data.delegates && data.delegates.length > 0 && (
-              <div className="mt-4">
-                <p className="text-xs text-gray-500 mb-2">Existing delegates:</p>
-                {data.delegates.map(d => (
-                  <div key={d.id} className="text-xs text-gray-600 py-1">{d.delegateName}</div>
-                ))}
-              </div>
-            )}
+            <button
+              onClick={() => setShowDelegateModal(true)}
+              className="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-colors"
+            >
+              <Plus size={14} /> Add Delegate
+            </button>
           </div>
-        )}
+          <p className="text-xs text-gray-400 mb-3">Select a rider — they'll get the admin link via SMS.</p>
+          {data.delegates && data.delegates.length > 0 ? (
+            <div className="space-y-1">
+              {data.delegates.map(d => (
+                <div key={d.id} className="flex items-center gap-2 text-sm py-1.5 border-b border-gray-50 last:border-0">
+                  <UserCheck size={13} className="text-green-500 flex-shrink-0" />
+                  <span className="font-medium">{d.delegateName}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400">No delegates yet</p>
+          )}
+        </div>
 
         {/* Cancel Event */}
         {!isCancelled && (
@@ -459,22 +491,16 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
               <AlertTriangle size={16} /> Cancel Event
             </h2>
             {!showCancelConfirm ? (
-              <button
-                onClick={() => setShowCancelConfirm(true)}
-                className="w-full border border-red-300 text-red-600 hover:bg-red-50 py-2.5 rounded-lg text-sm font-medium transition-colors"
-              >
+              <button onClick={() => setShowCancelConfirm(true)}
+                className="w-full border border-red-300 text-red-600 hover:bg-red-50 py-2.5 rounded-lg text-sm font-medium transition-colors">
                 Cancel This Ride
               </button>
             ) : (
               <div className="space-y-3">
                 <p className="text-sm text-gray-600">This will cancel the event. Optionally send a message to confirmed riders:</p>
-                <textarea
-                  placeholder="Cancellation message (optional)"
-                  value={cancelMsg}
-                  onChange={e => setCancelMsg(e.target.value)}
-                  rows={2}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
-                />
+                <textarea placeholder="Cancellation message (optional)" value={cancelMsg}
+                  onChange={e => setCancelMsg(e.target.value)} rows={2}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 resize-none" />
                 <div className="flex gap-2">
                   <button onClick={() => setShowCancelConfirm(false)}
                     className="flex-1 border border-gray-200 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors">
@@ -492,15 +518,4 @@ function EventAdminContent({ isDelegate = false, delegateToken, delegateName }: 
       </div>
     </div>
   )
-}
-
-export default function EventAdmin() {
-  const adminToken = localStorage.getItem('adminToken') || ''
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    if (!adminToken) navigate('/admin')
-  }, [])
-
-  return <EventAdminContent isDelegate={false} />
 }

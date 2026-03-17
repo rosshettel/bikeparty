@@ -203,20 +203,29 @@ adminRouter.post('/events/:id/cancel', requireAdmin, async (req, res) => {
 
 adminRouter.post('/events/:id/delegate', requireAdmin, async (req, res) => {
   try {
-    const { delegateName, memberId } = req.body
-    if (!delegateName?.trim()) return res.status(400).json({ error: 'delegateName required' })
+    const { memberId } = req.body
+    if (!memberId) return res.status(400).json({ error: 'memberId required' })
+
+    const member = await db.query.members.findFirst({ where: eq(members.id, memberId) })
+    if (!member) return res.status(404).json({ error: 'Member not found' })
+
     const token = uuidv4()
-    const delegate = {
+    await db.insert(eventAdmins).values({
       id: uuidv4(),
       eventId: req.params.id,
-      memberId: memberId || null,
-      delegateName: delegateName.trim(),
+      memberId: member.id,
+      delegateName: member.name,
       token,
-    }
-    await db.insert(eventAdmins).values(delegate)
+    })
+
     const baseUrl = process.env.BASE_URL || 'http://localhost:3001'
     const link = `${baseUrl}/event-admin/${req.params.id}?token=${token}`
-    res.json({ success: true, token, link })
+
+    const event = await db.query.events.findFirst({ where: eq(events.id, req.params.id) })
+    const { sendSms } = await import('../sms.js')
+    await sendSms(member.phone, `Hey ${member.name}! You've been given admin access for "${event?.title}". Manage it here: ${link}`)
+
+    res.json({ success: true, link, delegateName: member.name })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
   }
