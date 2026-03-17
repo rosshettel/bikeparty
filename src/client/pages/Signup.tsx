@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bike, Plus, Minus, Send } from 'lucide-react'
+import { Bike, Plus, Minus, Send, MapPin } from 'lucide-react'
 import PlacesAutocomplete, { PlaceResult } from '../components/PlacesAutocomplete'
 
 interface Person {
