@@ -97,13 +97,15 @@ adminRouter.get('/events/:id', requireAdminOrDelegate, async (req, res) => {
 
 adminRouter.patch('/events/:id', requireAdmin, async (req, res) => {
   try {
-    const { title, eventDate, meetTime, description, status } = req.body
+    const { title, eventDate, meetTime, description, status, startPointName, startPointAddress } = req.body
     const updates: Record<string, any> = {}
     if (title !== undefined) updates.title = title
     if (eventDate !== undefined) updates.eventDate = eventDate
     if (meetTime !== undefined) updates.meetTime = meetTime
     if (description !== undefined) updates.description = description
     if (status !== undefined) updates.status = status
+    if (startPointName !== undefined) updates.startPointName = startPointName
+    if (startPointAddress !== undefined) updates.startPointAddress = startPointAddress
     await db.update(events).set(updates).where(eq(events.id, req.params.id))
     res.json({ success: true })
   } catch (err: any) {

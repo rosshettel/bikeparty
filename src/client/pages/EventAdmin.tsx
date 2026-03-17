@@ -175,6 +175,11 @@ export default function EventAdmin() {
 
   // Distance for final destination
   const [distance, setDistance] = useState<{ oneWay: string; roundTrip: string } | null>(null)
+  const [distanceLoading, setDistanceLoading] = useState(false)
+
+  // Departure point editing
+  const [editingDeparture, setEditingDeparture] = useState(false)
+  const [pendingDeparture, setPendingDeparture] = useState<{ name: string; address: string } | null>(null)
 
   // Forms
   const [newDest, setNewDest] = useState({ name: '', address: '', mapsUrl: '' })
@@ -213,9 +218,12 @@ export default function EventAdmin() {
     if (!event.startPointAddress || !event.finalDestinationId) { setDistance(null); return }
     const finalDest = destinations.find(d => d.id === event.finalDestinationId)
     if (!finalDest?.address) { setDistance(null); return }
+    setDistanceLoading(true)
+    setDistance(null)
     getBikeDistance(event.startPointAddress, finalDest.address)
       .then(d => setDistance(d))
       .catch(() => setDistance(null))
+      .finally(() => setDistanceLoading(false))
   }, [data])
 
   if (loading) return (
@@ -242,6 +250,15 @@ export default function EventAdmin() {
 
   const rsvpModalList = rsvpModal === 'yes' ? confirmed : rsvpModal === 'no' ? declined : pending
   const rsvpModalTitle = rsvpModal === 'yes' ? 'Going' : rsvpModal === 'no' ? 'Not Going' : 'No Response'
+
+  const saveDeparture = async () => {
+    if (!pendingDeparture) return
+    const res = await adminFetch(`/events/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ startPointName: pendingDeparture.name, startPointAddress: pendingDeparture.address }),
+    })
+    if (res.ok) { setEditingDeparture(false); setPendingDeparture(null); await load(); flash('Departure point updated') }
+  }
 
   const addDestination = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -361,6 +378,47 @@ export default function EventAdmin() {
           ))}
         </div>
 
+        {/* Departure point */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold text-sm text-gray-700 flex items-center gap-2">
+              <Navigation size={16} /> Departure Point
+            </h2>
+            {!editingDeparture && (
+              <button onClick={() => setEditingDeparture(true)}
+                className="text-xs text-green-600 hover:text-green-700 font-medium">
+                {event.startPointAddress ? 'Change' : 'Set'}
+              </button>
+            )}
+          </div>
+
+          {editingDeparture ? (
+            <div className="space-y-2">
+              <PlacesAutocomplete
+                placeholder="Search for start location..."
+                onSelect={place => setPendingDeparture({ name: place.name, address: place.address })}
+              />
+              {pendingDeparture && (
+                <p className="text-xs text-gray-400 px-1">{pendingDeparture.address}</p>
+              )}
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => { setEditingDeparture(false); setPendingDeparture(null) }}
+                  className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-50">
+                  Cancel
+                </button>
+                <button onClick={saveDeparture} disabled={!pendingDeparture}
+                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white py-2 rounded-lg text-sm font-medium">
+                  Save
+                </button>
+              </div>
+            </div>
+          ) : event.startPointAddress ? (
+            <p className="text-sm text-gray-700">{event.startPointName || event.startPointAddress}</p>
+          ) : (
+            <p className="text-sm text-gray-400">No departure point set — add one to get bike directions and distance.</p>
+          )}
+        </div>
+
         {/* Route info — shown when start point + final destination are known */}
         {event.startPointAddress && event.finalDestinationId && (() => {
           const finalDest = destinations.find(d => d.id === event.finalDestinationId)
@@ -381,12 +439,14 @@ export default function EventAdmin() {
                   <p className="text-sm text-gray-700">
                     <span className="font-medium">To:</span> {finalDest.name}
                   </p>
-                  {distance ? (
+                  {distanceLoading ? (
+                    <p className="text-xs text-gray-400">Computing distance…</p>
+                  ) : distance ? (
                     <p className="text-sm text-green-700 font-medium">
                       🚲 {distance.oneWay} one-way · {distance.roundTrip} round trip
                     </p>
                   ) : (
-                    <p className="text-xs text-gray-400">Computing distance…</p>
+                    <p className="text-xs text-gray-400">Distance unavailable — destination may need an address.</p>
                   )}
                 </div>
                 {mapsUrl && (
