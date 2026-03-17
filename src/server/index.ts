@@ -26,7 +26,7 @@ app.use('/api/twilio', twilioRouter)
 app.get('/api/health', (req, res) => res.json({ ok: true }))
 
 // Serve static client files in production
-const clientDist = path.join(__dirname, '../../client')
+const clientDist = path.join(__dirname, '../client')
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(clientDist))
   // SPA fallback
