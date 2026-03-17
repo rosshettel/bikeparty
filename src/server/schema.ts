@@ -19,6 +19,8 @@ export const events = sqliteTable('events', {
   invitesSentAt: text('invites_sent_at'),
   groupChatCreatedAt: text('group_chat_created_at'),
   conversationSid: text('conversation_sid'),
+  startPointName: text('start_point_name'),
+  startPointAddress: text('start_point_address'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 })
 
@@ -27,6 +29,7 @@ export const destinations = sqliteTable('destinations', {
   eventId: text('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   mapsUrl: text('maps_url'), // Google Maps bike directions URL
+  address: text('address'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 })
 
@@ -46,6 +49,7 @@ export const rideSuggestions = sqliteTable('ride_suggestions', {
   memberPhone: text('member_phone'),
   name: text('name').notNull(),
   description: text('description'),
+  address: text('address'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 })
 

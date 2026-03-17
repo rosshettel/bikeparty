@@ -48,7 +48,7 @@ publicRouter.post('/members', async (req, res) => {
 // Submit ride suggestion
 publicRouter.post('/suggestions', async (req, res) => {
   try {
-    const { memberName, memberPhone, name, description } = req.body
+    const { memberName, memberPhone, name, description, address } = req.body
     if (!memberName?.trim() || !name?.trim()) {
       return res.status(400).json({ error: 'Name and suggestion required' })
     }
@@ -59,6 +59,7 @@ publicRouter.post('/suggestions', async (req, res) => {
       memberPhone: memberPhone?.trim() ? normalizePhone(memberPhone.trim()) : null,
       name: name.trim(),
       description: description?.trim() || null,
+      address: address?.trim() || null,
     }
     await db.insert(rideSuggestions).values(suggestion)
     res.json({ success: true, suggestion })

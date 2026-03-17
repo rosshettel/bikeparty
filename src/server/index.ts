@@ -25,6 +25,13 @@ app.use('/api/twilio', twilioRouter)
 // Health check
 app.get('/api/health', (req, res) => res.json({ ok: true }))
 
+// Public config for frontend (Maps API key, etc.)
+app.get('/api/config', (req, res) => {
+  res.json({
+    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
+  })
+})
+
 // Serve static client files in production
 const clientDist = path.join(__dirname, '../client')
 if (process.env.NODE_ENV === 'production') {

@@ -5,6 +5,7 @@ import { format, parse, startOfWeek, getDay, addWeeks, addMonths, parseISO, isAf
 import { enUS } from 'date-fns/locale'
 import { Link } from 'react-router-dom'
 import { Bike, Plus, LogOut, Users, MapPin, X, Repeat } from 'lucide-react'
+import PlacesAutocomplete from '../components/PlacesAutocomplete'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
 const localizer = dateFnsLocalizer({
@@ -40,6 +41,8 @@ interface NewEventForm {
   eventDate: string
   meetTime: string
   description: string
+  startPointName: string
+  startPointAddress: string
   recurring: boolean
   frequency: 'weekly' | 'biweekly' | 'monthly'
   repeatUntil: string
@@ -67,6 +70,7 @@ export default function AdminCalendar() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [form, setForm] = useState<NewEventForm>({
     title: '', eventDate: '', meetTime: '18:00', description: '',
+    startPointName: '', startPointAddress: '',
     recurring: false, frequency: 'weekly', repeatUntil: '',
   })
   const [loading, setLoading] = useState(false)
@@ -144,7 +148,7 @@ export default function AdminCalendar() {
         }
       }
       await loadEvents()
-      setForm({ title: '', eventDate: '', meetTime: '18:00', description: '', recurring: false, frequency: 'weekly', repeatUntil: '' })
+      setForm({ title: '', eventDate: '', meetTime: '18:00', description: '', startPointName: '', startPointAddress: '', recurring: false, frequency: 'weekly', repeatUntil: '' })
       setShowNewEvent(false)
     } catch (err: any) {
       setError(err.message)
@@ -175,7 +179,7 @@ export default function AdminCalendar() {
   }
 
   const handleSelectSlot = ({ start }: { start: Date }) => {
-    setForm(f => ({ ...f, eventDate: format(start, 'yyyy-MM-dd') }))
+    setForm(f => ({ ...f, eventDate: format(start, 'yyyy-MM-dd'), startPointName: '', startPointAddress: '' }))
     setShowNewEvent(true)
   }
 
@@ -267,6 +271,16 @@ export default function AdminCalendar() {
                       className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                     />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Point (optional)</label>
+                  <PlacesAutocomplete
+                    placeholder="Where does the ride start?"
+                    onSelect={place => setForm(f => ({ ...f, startPointName: place.name, startPointAddress: place.address }))}
+                  />
+                  {form.startPointAddress && (
+                    <p className="text-xs text-gray-400 mt-1 px-1">{form.startPointAddress}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>

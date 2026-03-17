@@ -10,6 +10,7 @@
     "start": "node dist/server/index.js"
   },
   "dependencies": {
+    "@types/google.maps": "^3.58.1",
     "better-sqlite3": "^9.4.3",
     "cors": "^2.8.5",
     "date-fns": "^3.3.1",

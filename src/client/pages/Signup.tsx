@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Bike, Plus, Minus, Send, MapPin } from 'lucide-react'
+import { Bike, Plus, Minus, Send } from 'lucide-react'
+import PlacesAutocomplete, { PlaceResult } from '../components/PlacesAutocomplete'
 
 interface Person {
   name: string
@@ -8,7 +9,7 @@ interface Person {
 
 export default function Signup() {
   const [people, setPeople] = useState<Person[]>([{ name: '', phone: '' }])
-  const [suggestion, setSuggestion] = useState({ name: '', description: '' })
+  const [suggestion, setSuggestion] = useState({ name: '', address: '', description: '' })
   const [submittedMembers, setSubmittedMembers] = useState(false)
   const [submittedSuggestion, setSubmittedSuggestion] = useState(false)
   const [error, setError] = useState('')
@@ -46,7 +47,7 @@ export default function Signup() {
   const submitSuggestion = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    if (!suggestion.name.trim()) return setError('Please enter a destination name.')
+    if (!suggestion.name.trim()) return setError('Please search for and select a destination.')
     // Use first person's name if available
     const firstName = people[0]?.name || 'Anonymous'
     const firstPhone = people[0]?.phone || ''
@@ -59,12 +60,13 @@ export default function Signup() {
           memberName: firstName,
           memberPhone: firstPhone,
           name: suggestion.name,
+          address: suggestion.address,
           description: suggestion.description,
         }),
       })
       if (!res.ok) throw new Error((await res.json()).error)
       setSubmittedSuggestion(true)
-      setSuggestion({ name: '', description: '' })
+      setSuggestion({ name: '', address: '', description: '' })
     } catch (err: any) {
       setError(err.message)
     }
@@ -173,18 +175,18 @@ export default function Signup() {
             </div>
           ) : (
             <form onSubmit={submitSuggestion} className="space-y-3">
-              <input
-                type="text"
-                placeholder="Destination name (e.g. Golden Gate Park)"
-                value={suggestion.name}
-                onChange={e => setSuggestion(s => ({ ...s, name: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+              <PlacesAutocomplete
+                placeholder="Search for a destination..."
+                onSelect={place => setSuggestion(s => ({ ...s, name: place.name, address: place.address }))}
               />
+              {suggestion.address && (
+                <p className="text-xs text-gray-500 px-1">{suggestion.address}</p>
+              )}
               <textarea
                 placeholder="Any details? (optional)"
                 value={suggestion.description}
                 onChange={e => setSuggestion(s => ({ ...s, description: e.target.value }))}
-                rows={3}
+                rows={2}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"
               />
               <button

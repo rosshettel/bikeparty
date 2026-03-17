@@ -71,5 +71,17 @@ export function runMigrations() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `)
+
+  // Safe migrations for new columns (no-op if already exists)
+  const alterations = [
+    "ALTER TABLE events ADD COLUMN start_point_name TEXT",
+    "ALTER TABLE events ADD COLUMN start_point_address TEXT",
+    "ALTER TABLE destinations ADD COLUMN address TEXT",
+    "ALTER TABLE ride_suggestions ADD COLUMN address TEXT",
+  ]
+  for (const sql of alterations) {
+    try { sqlite.exec(sql) } catch { /* column already exists */ }
+  }
+
   console.log('Database migrations complete')
 }

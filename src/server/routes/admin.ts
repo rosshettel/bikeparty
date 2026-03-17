@@ -53,7 +53,7 @@ adminRouter.get('/events', requireAdmin, async (req, res) => {
 
 adminRouter.post('/events', requireAdmin, async (req, res) => {
   try {
-    const { title, eventDate, meetTime, description } = req.body
+    const { title, eventDate, meetTime, description, startPointName, startPointAddress } = req.body
     if (!title?.trim() || !eventDate) {
       return res.status(400).json({ error: 'title and eventDate required' })
     }
@@ -63,6 +63,8 @@ adminRouter.post('/events', requireAdmin, async (req, res) => {
       eventDate,
       meetTime: meetTime || '18:00',
       description: description?.trim() || null,
+      startPointName: startPointName?.trim() || null,
+      startPointAddress: startPointAddress?.trim() || null,
     }
     await db.insert(events).values(event)
     res.json(event)
@@ -122,9 +124,9 @@ adminRouter.delete('/events/:id', requireAdmin, async (req, res) => {
 
 adminRouter.post('/events/:id/destinations', requireAdminOrDelegate, async (req, res) => {
   try {
-    const { name, mapsUrl } = req.body
+    const { name, mapsUrl, address } = req.body
     if (!name?.trim()) return res.status(400).json({ error: 'name required' })
-    const dest = { id: uuidv4(), eventId: req.params.id, name: name.trim(), mapsUrl: mapsUrl?.trim() || null }
+    const dest = { id: uuidv4(), eventId: req.params.id, name: name.trim(), address: address?.trim() || null, mapsUrl: mapsUrl?.trim() || null }
     await db.insert(destinations).values(dest)
     res.json(dest)
   } catch (err: any) {
