@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Calendar, dateFnsLocalizer, Event as RBCEvent } from 'react-big-calendar'
 import { format, parse, startOfWeek, getDay, addWeeks, addMonths, parseISO, isAfter, isBefore, isEqual } from 'date-fns'
 import { enUS } from 'date-fns/locale'
+import { Link } from 'react-router-dom'
 import { Bike, Plus, LogOut, Users, MapPin, X, Repeat } from 'lucide-react'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
@@ -205,7 +206,9 @@ export default function AdminCalendar() {
         </div>
         <div className="flex items-center gap-4">
           <div className="hidden sm:flex items-center gap-4 text-sm text-gray-600">
-            <span className="flex items-center gap-1"><Users size={14} /> {stats.members} riders</span>
+            <Link to="/admin/members" className="flex items-center gap-1 hover:text-green-600 transition-colors">
+              <Users size={14} /> {stats.members} riders
+            </Link>
             <button
               onClick={openSuggestions}
               className="flex items-center gap-1 hover:text-green-600 transition-colors"
