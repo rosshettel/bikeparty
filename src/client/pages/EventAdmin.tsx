@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, MapPin, ExternalLink, Plus, Trash2,
   Send, Users, MessageSquare, UserCheck, AlertTriangle, Bike, X, Search, Navigation
 } from 'lucide-react'
 import PlacesAutocomplete, { PlaceResult } from '../components/PlacesAutocomplete'
-import { buildBikeDirectionsUrl, getBikeDistance } from '../lib/maps'
+import { buildBikeDirectionsUrl, renderBikeRoute } from '../lib/maps'
 
 interface Destination {
   id: string
@@ -173,7 +173,8 @@ export default function EventAdmin() {
   const [showDelegateModal, setShowDelegateModal] = useState(false)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
 
-  // Distance for final destination
+  // Route map
+  const mapRef = useRef<HTMLDivElement>(null)
   const [distance, setDistance] = useState<{ oneWay: string; roundTrip: string } | null>(null)
   const [distanceLoading, setDistanceLoading] = useState(false)
 
@@ -211,20 +212,20 @@ export default function EventAdmin() {
 
   useEffect(() => { load() }, [id])
 
-  // Recompute bike distance when final destination + start point are both known
+  // Render route map + compute distance when start + final destination are both known
   useEffect(() => {
-    if (!data) return
+    if (!data || !mapRef.current) return
     const { event, destinations } = data
     if (!event.startPointAddress || !event.finalDestinationId) { setDistance(null); return }
     const finalDest = destinations.find(d => d.id === event.finalDestinationId)
     if (!finalDest?.address) { setDistance(null); return }
     setDistanceLoading(true)
     setDistance(null)
-    getBikeDistance(event.startPointAddress, finalDest.address)
+    renderBikeRoute(event.startPointAddress, finalDest.address, mapRef.current)
       .then(d => setDistance(d))
       .catch(() => setDistance(null))
       .finally(() => setDistanceLoading(false))
-  }, [data])
+  }, [data, mapRef.current])
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -378,84 +379,98 @@ export default function EventAdmin() {
           ))}
         </div>
 
-        {/* Departure point */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="font-semibold text-sm text-gray-700 flex items-center gap-2">
-              <Navigation size={16} /> Departure Point
-            </h2>
-            {!editingDeparture && (
-              <button onClick={() => setEditingDeparture(true)}
-                className="text-xs text-green-600 hover:text-green-700 font-medium">
-                {event.startPointAddress ? 'Change' : 'Set'}
-              </button>
-            )}
-          </div>
-
-          {editingDeparture ? (
-            <div className="space-y-2">
-              <PlacesAutocomplete
-                placeholder="Search for start location..."
-                onSelect={place => setPendingDeparture({ name: place.name, address: place.address })}
-              />
-              {pendingDeparture && (
-                <p className="text-xs text-gray-400 px-1">{pendingDeparture.address}</p>
-              )}
-              <div className="flex gap-2 pt-1">
-                <button onClick={() => { setEditingDeparture(false); setPendingDeparture(null) }}
-                  className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-50">
-                  Cancel
-                </button>
-                <button onClick={saveDeparture} disabled={!pendingDeparture}
-                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white py-2 rounded-lg text-sm font-medium">
-                  Save
-                </button>
-              </div>
-            </div>
-          ) : event.startPointAddress ? (
-            <p className="text-sm text-gray-700">{event.startPointName || event.startPointAddress}</p>
-          ) : (
-            <p className="text-sm text-gray-400">No departure point set — add one to get bike directions and distance.</p>
-          )}
-        </div>
-
-        {/* Route info — shown when start point + final destination are known */}
-        {event.startPointAddress && event.finalDestinationId && (() => {
+        {/* Route card — departure + destination + map */}
+        {(() => {
           const finalDest = destinations.find(d => d.id === event.finalDestinationId)
-          if (!finalDest) return null
-          const mapsUrl = finalDest.address
-            ? buildBikeDirectionsUrl(event.startPointAddress!, finalDest.address)
-            : finalDest.mapsUrl
+          const mapsUrl = event.startPointAddress && finalDest?.address
+            ? buildBikeDirectionsUrl(event.startPointAddress, finalDest.address)
+            : finalDest?.mapsUrl
+          const hasRoute = !!(event.startPointAddress && finalDest?.address)
+
           return (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1 min-w-0">
-                  <p className="text-xs font-semibold text-green-700 uppercase tracking-wide flex items-center gap-1">
-                    <Navigation size={12} /> Route
-                  </p>
-                  <p className="text-sm text-gray-700">
-                    <span className="font-medium">From:</span> {event.startPointName || event.startPointAddress}
-                  </p>
-                  <p className="text-sm text-gray-700">
-                    <span className="font-medium">To:</span> {finalDest.name}
-                  </p>
-                  {distanceLoading ? (
-                    <p className="text-xs text-gray-400">Computing distance…</p>
-                  ) : distance ? (
-                    <p className="text-sm text-green-700 font-medium">
-                      🚲 {distance.oneWay} one-way · {distance.roundTrip} round trip
-                    </p>
-                  ) : (
-                    <p className="text-xs text-gray-400">Distance unavailable — destination may need an address.</p>
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-semibold text-sm text-gray-700 flex items-center gap-2">
+                    <Navigation size={16} /> Route
+                  </h2>
+                  {mapsUrl && (
+                    <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-xs font-medium text-green-600 hover:text-green-700">
+                      <ExternalLink size={12} /> Open in Maps
+                    </a>
                   )}
                 </div>
-                {mapsUrl && (
-                  <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
-                    className="flex-shrink-0 flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
-                    <ExternalLink size={12} /> Open in Maps
-                  </a>
-                )}
+
+                {/* Departure */}
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 w-2 h-2 rounded-full bg-green-500 flex-shrink-0 ring-2 ring-green-100" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">Departure</p>
+                    {editingDeparture ? (
+                      <div className="space-y-2">
+                        <PlacesAutocomplete
+                          placeholder="Search for start location..."
+                          onSelect={place => setPendingDeparture({ name: place.name, address: place.address })}
+                        />
+                        {pendingDeparture && <p className="text-xs text-gray-400">{pendingDeparture.address}</p>}
+                        <div className="flex gap-2">
+                          <button onClick={() => { setEditingDeparture(false); setPendingDeparture(null) }}
+                            className="flex-1 border border-gray-200 text-gray-600 py-1.5 rounded-lg text-xs hover:bg-gray-50">
+                            Cancel
+                          </button>
+                          <button onClick={saveDeparture} disabled={!pendingDeparture}
+                            className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white py-1.5 rounded-lg text-xs font-medium">
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : event.startPointAddress ? (
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-gray-800 truncate">{event.startPointName || event.startPointAddress}</p>
+                        <button onClick={() => setEditingDeparture(true)}
+                          className="flex-shrink-0 text-xs text-gray-400 hover:text-green-600">change</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setEditingDeparture(true)}
+                        className="text-sm text-green-600 hover:text-green-700 font-medium">
+                        + Set departure point
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Connector line */}
+                <div className="ml-[3px] pl-3 border-l-2 border-dashed border-gray-200 py-0.5">
+                  {distanceLoading ? (
+                    <p className="text-xs text-gray-400 pl-2">Computing distance…</p>
+                  ) : distance ? (
+                    <p className="text-xs text-green-700 font-medium pl-2">
+                      🚲 {distance.oneWay} one-way · {distance.roundTrip} round trip
+                    </p>
+                  ) : event.startPointAddress && finalDest && !finalDest.address ? (
+                    <p className="text-xs text-gray-400 pl-2">Distance unavailable — destination has no address</p>
+                  ) : null}
+                </div>
+
+                {/* Destination */}
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 w-2 h-2 rounded-full bg-red-400 flex-shrink-0 ring-2 ring-red-100" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">Destination</p>
+                    {finalDest ? (
+                      <p className="text-sm text-gray-800">{finalDest.name}</p>
+                    ) : (
+                      <p className="text-sm text-gray-400">Not selected yet — pick one from the list below</p>
+                    )}
+                  </div>
+                </div>
               </div>
+
+              {/* Embedded map — only when route is computable */}
+              {hasRoute && (
+                <div ref={mapRef} className="w-full" style={{ height: 320 }} />
+              )}
             </div>
           )
         })()}
