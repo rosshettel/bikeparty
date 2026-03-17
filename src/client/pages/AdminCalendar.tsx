@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Calendar, dateFnsLocalizer, Event as RBCEvent } from 'react-big-calendar'
-import { format, parse, startOfWeek, getDay, parseISO, addDays } from 'date-fns'
+import { format, parse, startOfWeek, getDay, addWeeks, addMonths, parseISO, isAfter, isBefore, isEqual } from 'date-fns'
 import { enUS } from 'date-fns/locale'
-import { Bike, Plus, LogOut, Users, MapPin, MessageSquare } from 'lucide-react'
+import { Bike, Plus, LogOut, Users, MapPin, X, Repeat } from 'lucide-react'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
 const localizer = dateFnsLocalizer({
@@ -25,17 +25,49 @@ interface BikeEvent {
   createdAt: string
 }
 
+interface Suggestion {
+  id: string
+  memberName: string
+  memberPhone?: string
+  name: string
+  description?: string
+  createdAt: string
+}
+
 interface NewEventForm {
   title: string
   eventDate: string
   meetTime: string
   description: string
+  recurring: boolean
+  frequency: 'weekly' | 'biweekly' | 'monthly'
+  repeatUntil: string
+}
+
+function getRecurringDates(startDate: string, frequency: string, repeatUntil: string): string[] {
+  const dates: string[] = []
+  let current = parseISO(startDate)
+  const end = parseISO(repeatUntil)
+  if (!repeatUntil || isBefore(end, current)) return [startDate]
+
+  while (!isAfter(current, end)) {
+    dates.push(format(current, 'yyyy-MM-dd'))
+    if (frequency === 'weekly') current = addWeeks(current, 1)
+    else if (frequency === 'biweekly') current = addWeeks(current, 2)
+    else current = addMonths(current, 1)
+  }
+  return dates
 }
 
 export default function AdminCalendar() {
   const [events, setEvents] = useState<BikeEvent[]>([])
   const [showNewEvent, setShowNewEvent] = useState(false)
-  const [form, setForm] = useState<NewEventForm>({ title: '', eventDate: '', meetTime: '18:00', description: '' })
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [form, setForm] = useState<NewEventForm>({
+    title: '', eventDate: '', meetTime: '18:00', description: '',
+    recurring: false, frequency: 'weekly', repeatUntil: '',
+  })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [stats, setStats] = useState({ members: 0, suggestions: 0 })
@@ -67,27 +99,54 @@ export default function AdminCalendar() {
       apiFetch('/members'),
       apiFetch('/suggestions'),
     ])
-    const members = await membersRes.json()
-    const suggestions = await suggestionsRes.json()
-    setStats({ members: members.length || 0, suggestions: suggestions.length || 0 })
+    const membersData = await membersRes.json()
+    const suggestionsData = await suggestionsRes.json()
+    setSuggestions(Array.isArray(suggestionsData) ? suggestionsData : [])
+    setStats({ members: membersData.length || 0, suggestions: Array.isArray(suggestionsData) ? suggestionsData.length : 0 })
+  }
+
+  const openSuggestions = async () => {
+    // Refresh suggestions before showing
+    const res = await apiFetch('/suggestions')
+    const data = await res.json()
+    setSuggestions(Array.isArray(data) ? data : [])
+    setShowSuggestions(true)
   }
 
   const createEvent = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.title.trim() || !form.eventDate) return setError('Title and date required')
+    if (form.recurring && !form.repeatUntil) return setError('Repeat until date required')
     setLoading(true)
-    const res = await apiFetch('/events', {
-      method: 'POST',
-      body: JSON.stringify(form),
-    })
-    if (res.ok) {
+    setError('')
+
+    const dates = form.recurring
+      ? getRecurringDates(form.eventDate, form.frequency, form.repeatUntil)
+      : [form.eventDate]
+
+    try {
+      for (const date of dates) {
+        const res = await apiFetch('/events', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: form.title,
+            eventDate: date,
+            meetTime: form.meetTime,
+            description: form.description,
+          }),
+        })
+        if (!res.ok) {
+          const d = await res.json()
+          setError(d.error)
+          setLoading(false)
+          return
+        }
+      }
       await loadEvents()
-      setForm({ title: '', eventDate: '', meetTime: '18:00', description: '' })
+      setForm({ title: '', eventDate: '', meetTime: '18:00', description: '', recurring: false, frequency: 'weekly', repeatUntil: '' })
       setShowNewEvent(false)
-      setError('')
-    } else {
-      const d = await res.json()
-      setError(d.error)
+    } catch (err: any) {
+      setError(err.message)
     }
     setLoading(false)
   }
@@ -97,7 +156,6 @@ export default function AdminCalendar() {
     navigate('/admin')
   }
 
-  // Convert events to react-big-calendar format
   const calEvents: RBCEvent[] = events.map(ev => {
     const [year, month, day] = ev.eventDate.split('-').map(Number)
     const [h, m] = ev.meetTime.split(':').map(Number)
@@ -112,13 +170,11 @@ export default function AdminCalendar() {
   })
 
   const handleSelectEvent = (event: RBCEvent) => {
-    const bikeEvent = event.resource as BikeEvent
-    navigate(`/admin/events/${bikeEvent.id}`)
+    navigate(`/admin/events/${(event.resource as BikeEvent).id}`)
   }
 
   const handleSelectSlot = ({ start }: { start: Date }) => {
-    const dateStr = format(start, 'yyyy-MM-dd')
-    setForm(f => ({ ...f, eventDate: dateStr }))
+    setForm(f => ({ ...f, eventDate: format(start, 'yyyy-MM-dd') }))
     setShowNewEvent(true)
   }
 
@@ -132,6 +188,10 @@ export default function AdminCalendar() {
     }
   }
 
+  const recurringPreview = form.recurring && form.eventDate && form.repeatUntil
+    ? getRecurringDates(form.eventDate, form.frequency, form.repeatUntil)
+    : []
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -144,10 +204,14 @@ export default function AdminCalendar() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          {/* Stats */}
           <div className="hidden sm:flex items-center gap-4 text-sm text-gray-600">
             <span className="flex items-center gap-1"><Users size={14} /> {stats.members} riders</span>
-            <span className="flex items-center gap-1"><MapPin size={14} /> {stats.suggestions} suggestions</span>
+            <button
+              onClick={openSuggestions}
+              className="flex items-center gap-1 hover:text-green-600 transition-colors"
+            >
+              <MapPin size={14} /> {stats.suggestions} suggestions
+            </button>
           </div>
           <button
             onClick={() => setShowNewEvent(true)}
@@ -165,7 +229,7 @@ export default function AdminCalendar() {
         {/* New event modal */}
         {showNewEvent && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
               <h2 className="text-lg font-bold mb-4">New Group Ride</h2>
               {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
               <form onSubmit={createEvent} className="space-y-4">
@@ -181,7 +245,9 @@ export default function AdminCalendar() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {form.recurring ? 'First Date' : 'Date'}
+                    </label>
                     <input
                       type="date"
                       value={form.eventDate}
@@ -205,21 +271,116 @@ export default function AdminCalendar() {
                     placeholder="Meet at the fountain, bring lights..."
                     value={form.description}
                     onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                    rows={3}
+                    rows={2}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"
                   />
                 </div>
-                <div className="flex gap-3 pt-2">
+
+                {/* Recurring toggle */}
+                <div className="border border-gray-100 rounded-xl p-3 space-y-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.recurring}
+                      onChange={e => setForm(f => ({ ...f, recurring: e.target.checked }))}
+                      className="w-4 h-4 accent-green-600"
+                    />
+                    <span className="text-sm font-medium flex items-center gap-1.5">
+                      <Repeat size={14} className="text-green-600" /> Recurring ride
+                    </span>
+                  </label>
+
+                  {form.recurring && (
+                    <div className="space-y-3 pl-6">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Frequency</label>
+                        <div className="flex gap-2">
+                          {(['weekly', 'biweekly', 'monthly'] as const).map(f => (
+                            <label key={f} className={`flex-1 text-center text-xs py-1.5 rounded-lg border cursor-pointer transition-colors ${form.frequency === f ? 'bg-green-600 text-white border-green-600' : 'border-gray-200 hover:border-green-300'}`}>
+                              <input type="radio" name="frequency" value={f} checked={form.frequency === f}
+                                onChange={() => setForm(frm => ({ ...frm, frequency: f }))} className="sr-only" />
+                              {f === 'weekly' ? 'Weekly' : f === 'biweekly' ? 'Every 2 wks' : 'Monthly'}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Repeat until</label>
+                        <input
+                          type="date"
+                          value={form.repeatUntil}
+                          min={form.eventDate}
+                          onChange={e => setForm(f => ({ ...f, repeatUntil: e.target.value }))}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                        />
+                      </div>
+                      {recurringPreview.length > 0 && (
+                        <p className="text-xs text-green-700 bg-green-50 px-3 py-2 rounded-lg">
+                          Creates <strong>{recurringPreview.length}</strong> rides: {recurringPreview[0]} → {recurringPreview[recurringPreview.length - 1]}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3 pt-1">
                   <button type="button" onClick={() => { setShowNewEvent(false); setError('') }}
                     className="flex-1 border border-gray-200 text-gray-700 py-2.5 rounded-xl font-medium hover:bg-gray-50 transition-colors">
                     Cancel
                   </button>
                   <button type="submit" disabled={loading}
                     className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white py-2.5 rounded-xl font-medium transition-colors">
-                    {loading ? 'Creating...' : 'Create Ride'}
+                    {loading ? 'Creating...' : form.recurring && recurringPreview.length > 1 ? `Create ${recurringPreview.length} Rides` : 'Create Ride'}
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Suggestions modal */}
+        {showSuggestions && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between p-5 border-b border-gray-100">
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <MapPin size={18} className="text-green-600" /> Ride Suggestions
+                </h2>
+                <button onClick={() => setShowSuggestions(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="overflow-y-auto flex-1 p-5">
+                {suggestions.length === 0 ? (
+                  <p className="text-gray-400 text-sm text-center py-8">No suggestions yet</p>
+                ) : (
+                  <div className="space-y-3">
+                    {suggestions.map(s => (
+                      <div key={s.id} className="border border-gray-100 rounded-xl p-4 bg-gray-50">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-semibold text-sm">{s.name}</p>
+                            {s.description && <p className="text-sm text-gray-600 mt-0.5">{s.description}</p>}
+                          </div>
+                          <button
+                            onClick={() => {
+                              setForm(f => ({ ...f, title: s.name }))
+                              setShowSuggestions(false)
+                              setShowNewEvent(true)
+                            }}
+                            className="flex-shrink-0 text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2.5 py-1 rounded-lg font-medium transition-colors"
+                          >
+                            Use
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-2">
+                          from {s.memberName}{s.memberPhone ? ` · ${s.memberPhone}` : ''} · {s.createdAt.slice(0, 10)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
