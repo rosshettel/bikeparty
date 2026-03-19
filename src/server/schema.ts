@@ -21,6 +21,7 @@ export const events = sqliteTable('events', {
   conversationSid: text('conversation_sid'),
   startPointName: text('start_point_name'),
   startPointAddress: text('start_point_address'),
+  eventToken: text('event_token'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 })
 
@@ -53,11 +54,3 @@ export const rideSuggestions = sqliteTable('ride_suggestions', {
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 })
 
-export const eventAdmins = sqliteTable('event_admins', {
-  id: text('id').primaryKey(),
-  eventId: text('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
-  memberId: text('member_id').references(() => members.id),
-  delegateName: text('delegate_name').notNull(),
-  token: text('token').notNull().unique(),
-  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
-})

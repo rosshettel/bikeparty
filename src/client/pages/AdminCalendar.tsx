@@ -138,6 +138,8 @@ export default function AdminCalendar() {
             eventDate: date,
             meetTime: form.meetTime,
             description: form.description,
+            startPointName: form.startPointName || undefined,
+            startPointAddress: form.startPointAddress || undefined,
           }),
         })
         if (!res.ok) {

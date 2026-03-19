@@ -65,12 +65,19 @@ export async function getBikeDistance(
   })
 }
 
-/** Render a bike route on a map element and return distance info. */
+export interface RouteInfo {
+  oneWay: string
+  roundTrip: string
+  miles: number
+  elevationGainFt: string | null
+}
+
+/** Render a bike route on a map element and return distance + elevation info. */
 export async function renderBikeRoute(
   origin: string,
   destination: string,
   mapDiv: HTMLElement
-): Promise<{ oneWay: string; roundTrip: string; miles: number } | null> {
+): Promise<RouteInfo | null> {
   await loadMapsApi()
   if (!window.google?.maps) return null
 
@@ -85,7 +92,8 @@ export async function renderBikeRoute(
 
     const renderer = new google.maps.DirectionsRenderer({
       map,
-      polylineOptions: { strokeColor: '#16a34a', strokeWeight: 5 },
+      polylineOptions: { strokeColor: '#dc2626', strokeWeight: 5 },
+      suppressMarkers: false,
     })
 
     new google.maps.DirectionsService().route(
@@ -95,7 +103,29 @@ export async function renderBikeRoute(
         renderer.setDirections(result)
         const meters = result.routes[0]?.legs[0]?.distance?.value ?? 0
         const miles = meters / 1609.344
-        resolve({ oneWay: `${miles.toFixed(1)} mi`, roundTrip: `${(miles * 2).toFixed(1)} mi`, miles })
+        const base: RouteInfo = {
+          oneWay: `${miles.toFixed(1)} mi`,
+          roundTrip: `${(miles * 2).toFixed(1)} mi`,
+          miles,
+          elevationGainFt: null,
+        }
+
+        // Fetch elevation along the route path
+        const path = result.routes[0]?.overview_path ?? []
+        if (path.length < 2) { resolve(base); return }
+
+        new google.maps.ElevationService().getElevationAlongPath(
+          { path, samples: Math.min(256, path.length) },
+          (elevResults, elevStatus) => {
+            if (elevStatus !== 'OK' || !elevResults) { resolve(base); return }
+            let gainMeters = 0
+            for (let i = 1; i < elevResults.length; i++) {
+              const diff = elevResults[i].elevation - elevResults[i - 1].elevation
+              if (diff > 0) gainMeters += diff
+            }
+            resolve({ ...base, elevationGainFt: `${Math.round(gainMeters * 3.28084)} ft` })
+          }
+        )
       }
     )
   })

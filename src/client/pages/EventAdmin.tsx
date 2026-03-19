@@ -2,10 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, MapPin, ExternalLink, Plus, Trash2,
-  Send, Users, MessageSquare, UserCheck, AlertTriangle, Bike, X, Search, Navigation
+  Send, Users, MessageSquare, UserCheck, AlertTriangle, Bike, X, Navigation
 } from 'lucide-react'
 import PlacesAutocomplete, { PlaceResult } from '../components/PlacesAutocomplete'
-import { buildBikeDirectionsUrl, renderBikeRoute } from '../lib/maps'
+import { buildBikeDirectionsUrl, renderBikeRoute, RouteInfo } from '../lib/maps'
 
 interface Destination {
   id: string
@@ -22,11 +22,6 @@ interface RsvpItem {
   member?: { name: string; phone: string }
 }
 
-interface Member {
-  id: string
-  name: string
-  phone: string
-}
 
 interface BikeEvent {
   id: string
@@ -47,7 +42,6 @@ interface EventData {
   event: BikeEvent
   destinations: Destination[]
   rsvps: RsvpItem[]
-  delegates?: Array<{ id: string; delegateName: string; token: string }>
 }
 
 // Modal showing a list of riders for a given RSVP status
@@ -89,74 +83,6 @@ function RsvpModal({ title, rsvps, onClose }: {
   )
 }
 
-// Modal to search and select a rider to delegate admin
-function DelegateModal({ onSelect, onClose }: {
-  onSelect: (member: Member) => void
-  onClose: () => void
-}) {
-  const [members, setMembers] = useState<Member[]>([])
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
-  const token = localStorage.getItem('adminToken') || ''
-
-  useEffect(() => {
-    fetch('/api/admin/members', { headers: { 'x-admin-token': token } })
-      .then(r => r.json())
-      .then(data => { setMembers(Array.isArray(data) ? data : []); setLoading(false) })
-  }, [])
-
-  const filtered = members.filter(m =>
-    m.name.toLowerCase().includes(search.toLowerCase()) ||
-    m.phone.includes(search)
-  )
-
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[70vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-gray-100">
-          <h3 className="font-semibold">Choose a Rider</h3>
-          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={16} /></button>
-        </div>
-        <div className="p-3 border-b border-gray-100">
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by name or phone..."
-              autoFocus
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-            />
-          </div>
-        </div>
-        <div className="overflow-y-auto flex-1">
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">No riders found</p>
-          ) : (
-            filtered.map(m => (
-              <button
-                key={m.id}
-                onClick={() => onSelect(m)}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-green-50 text-left transition-colors border-b border-gray-50 last:border-0"
-              >
-                <div>
-                  <p className="text-sm font-medium">{m.name}</p>
-                  <p className="text-xs text-gray-400">{m.phone}</p>
-                </div>
-                <span className="text-xs text-green-600 font-medium">Select</span>
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export default function EventAdmin() {
   const { id } = useParams<{ id: string }>()
@@ -170,12 +96,15 @@ export default function EventAdmin() {
 
   // Modals
   const [rsvpModal, setRsvpModal] = useState<'yes' | 'no' | 'pending' | null>(null)
-  const [showDelegateModal, setShowDelegateModal] = useState(false)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+
+  // Delegate
+  const [delegatePhone, setDelegatePhone] = useState('')
+  const [delegateSending, setDelegateSending] = useState(false)
 
   // Route map
   const mapRef = useRef<HTMLDivElement>(null)
-  const [distance, setDistance] = useState<{ oneWay: string; roundTrip: string } | null>(null)
+  const [distance, setDistance] = useState<RouteInfo | null>(null)
   const [distanceLoading, setDistanceLoading] = useState(false)
 
   // Departure point editing
@@ -302,14 +231,17 @@ export default function EventAdmin() {
     else flash(`Error: ${d.error}`)
   }
 
-  const delegateTo = async (member: Member) => {
-    setShowDelegateModal(false)
+  const sendDelegate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!delegatePhone.trim()) return
+    setDelegateSending(true)
     const res = await adminFetch(`/events/${id}/delegate`, {
-      method: 'POST', body: JSON.stringify({ memberId: member.id }),
+      method: 'POST', body: JSON.stringify({ phone: delegatePhone }),
     })
     const d = await res.json()
-    if (res.ok) { await load(); flash(`Admin link sent to ${member.name} via SMS!`) }
+    if (res.ok) { setDelegatePhone(''); flash('Admin link sent via SMS!') }
     else flash(`Error: ${d.error}`)
+    setDelegateSending(false)
   }
 
   const cancelEvent = async () => {
@@ -353,13 +285,6 @@ export default function EventAdmin() {
         />
       )}
 
-      {showDelegateModal && (
-        <DelegateModal
-          onSelect={delegateTo}
-          onClose={() => setShowDelegateModal(false)}
-        />
-      )}
-
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
         {/* RSVP Stats — clickable */}
         <div className="grid grid-cols-3 gap-4">
@@ -379,165 +304,167 @@ export default function EventAdmin() {
           ))}
         </div>
 
-        {/* Route card — departure + destination + map */}
+        {/* Route card — map + 3 big stats */}
         {(() => {
           const finalDest = destinations.find(d => d.id === event.finalDestinationId)
+          const hasRoute = !!(event.startPointAddress && finalDest?.address)
           const mapsUrl = event.startPointAddress && finalDest?.address
             ? buildBikeDirectionsUrl(event.startPointAddress, finalDest.address)
             : finalDest?.mapsUrl
-          const hasRoute = !!(event.startPointAddress && finalDest?.address)
+
+          if (!hasRoute && !distanceLoading) return null
 
           return (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="font-semibold text-sm text-gray-700 flex items-center gap-2">
-                    <Navigation size={16} /> Route
-                  </h2>
-                  {mapsUrl && (
-                    <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-xs font-medium text-green-600 hover:text-green-700">
-                      <ExternalLink size={12} /> Open in Maps
-                    </a>
-                  )}
-                </div>
-
-                {/* Departure */}
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 w-2 h-2 rounded-full bg-green-500 flex-shrink-0 ring-2 ring-green-100" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">Departure</p>
-                    {editingDeparture ? (
-                      <div className="space-y-2">
-                        <PlacesAutocomplete
-                          placeholder="Search for start location..."
-                          onSelect={place => setPendingDeparture({ name: place.name, address: place.address })}
-                        />
-                        {pendingDeparture && <p className="text-xs text-gray-400">{pendingDeparture.address}</p>}
-                        <div className="flex gap-2">
-                          <button onClick={() => { setEditingDeparture(false); setPendingDeparture(null) }}
-                            className="flex-1 border border-gray-200 text-gray-600 py-1.5 rounded-lg text-xs hover:bg-gray-50">
-                            Cancel
-                          </button>
-                          <button onClick={saveDeparture} disabled={!pendingDeparture}
-                            className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white py-1.5 rounded-lg text-xs font-medium">
-                            Save
-                          </button>
-                        </div>
-                      </div>
-                    ) : event.startPointAddress ? (
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm text-gray-800 truncate">{event.startPointName || event.startPointAddress}</p>
-                        <button onClick={() => setEditingDeparture(true)}
-                          className="flex-shrink-0 text-xs text-gray-400 hover:text-green-600">change</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => setEditingDeparture(true)}
-                        className="text-sm text-green-600 hover:text-green-700 font-medium">
-                        + Set departure point
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Connector line */}
-                <div className="ml-[3px] pl-3 border-l-2 border-dashed border-gray-200 py-0.5">
-                  {distanceLoading ? (
-                    <p className="text-xs text-gray-400 pl-2">Computing distance…</p>
-                  ) : distance ? (
-                    <p className="text-xs text-green-700 font-medium pl-2">
-                      🚲 {distance.oneWay} one-way · {distance.roundTrip} round trip
-                    </p>
-                  ) : event.startPointAddress && finalDest && !finalDest.address ? (
-                    <p className="text-xs text-gray-400 pl-2">Distance unavailable — destination has no address</p>
-                  ) : null}
-                </div>
-
-                {/* Destination */}
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 w-2 h-2 rounded-full bg-red-400 flex-shrink-0 ring-2 ring-red-100" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">Destination</p>
-                    {finalDest ? (
-                      <p className="text-sm text-gray-800">{finalDest.name}</p>
-                    ) : (
-                      <p className="text-sm text-gray-400">Not selected yet — pick one from the list below</p>
-                    )}
-                  </div>
-                </div>
+              <div className="flex items-center justify-between px-5 pt-4 pb-2">
+                <h2 className="font-semibold text-sm text-gray-700 flex items-center gap-2">
+                  <Navigation size={16} /> Route
+                </h2>
+                {mapsUrl && (
+                  <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs font-medium text-green-600 hover:text-green-700">
+                    <ExternalLink size={12} /> Open in Maps
+                  </a>
+                )}
               </div>
 
-              {/* Embedded map — only when route is computable */}
-              {hasRoute && (
-                <div ref={mapRef} className="w-full" style={{ height: 320 }} />
-              )}
+              {/* Map */}
+              <div ref={mapRef} className="w-full" style={{ height: 320 }} />
+
+              {/* 3 large stats */}
+              <div className="grid grid-cols-3 divide-x divide-gray-100 border-t border-gray-100">
+                {distanceLoading ? (
+                  <div className="col-span-3 flex justify-center items-center py-6">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600" />
+                  </div>
+                ) : distance ? (
+                  <>
+                    <div className="text-center py-5 px-2">
+                      <div className="text-2xl font-bold text-gray-900">{distance.oneWay}</div>
+                      <div className="text-xs text-gray-400 mt-1">One Way</div>
+                    </div>
+                    <div className="text-center py-5 px-2">
+                      <div className="text-2xl font-bold text-gray-900">{distance.elevationGainFt ?? '—'}</div>
+                      <div className="text-xs text-gray-400 mt-1">Elevation Gain</div>
+                    </div>
+                    <div className="text-center py-5 px-2">
+                      <div className="text-2xl font-bold text-gray-900">{distance.roundTrip}</div>
+                      <div className="text-xs text-gray-400 mt-1">Round Trip</div>
+                    </div>
+                  </>
+                ) : null}
+              </div>
             </div>
           )
         })()}
 
-        {/* Destinations */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h2 className="font-semibold text-sm text-gray-700 mb-4 flex items-center gap-2">
-            <MapPin size={16} /> Destinations
-          </h2>
-          {destinations.length === 0 && <p className="text-sm text-gray-400 mb-4">No destinations yet</p>}
-          <div className="space-y-3 mb-4">
-            {destinations.map(dest => {
-              const votes = voteTallies[dest.id] || 0
-              const isFinal = event.finalDestinationId === dest.id
-              return (
-                <div key={dest.id} className={`flex items-center gap-3 p-3 rounded-lg border ${isFinal ? 'border-green-400 bg-green-50' : 'border-gray-100 bg-gray-50'}`}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-sm">{dest.name}</span>
-                      {isFinal && <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">FINAL</span>}
-                      {votes > 0 && <span className="text-xs text-gray-500">{votes} vote{votes !== 1 ? 's' : ''}</span>}
-                    </div>
-                    {(dest.address && event.startPointAddress
-                      ? buildBikeDirectionsUrl(event.startPointAddress, dest.address)
-                      : dest.mapsUrl) && (
-                      <a
-                        href={dest.address && event.startPointAddress
-                          ? buildBikeDirectionsUrl(event.startPointAddress, dest.address)
-                          : dest.mapsUrl!}
-                        target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-green-600 hover:underline flex items-center gap-1 mt-0.5">
-                        <ExternalLink size={11} /> Bike directions
-                      </a>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {!isFinal && (
-                      <button onClick={() => selectDestination(dest.id)}
-                        className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2.5 py-1 rounded-lg font-medium transition-colors">
-                        Select
-                      </button>
-                    )}
-                    <button onClick={() => deleteDestination(dest.id)}
-                      className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          <form onSubmit={addDestination} className="space-y-2">
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <PlacesAutocomplete
-                  placeholder="Search for a destination..."
-                  onSelect={(place: PlaceResult) => setNewDest(d => ({ ...d, name: place.name, address: place.address }))}
-                />
-                {newDest.address && (
-                  <p className="text-xs text-gray-400 mt-1 px-1">{newDest.address}</p>
-                )}
-              </div>
-              <button type="submit" className="self-start bg-green-600 hover:bg-green-700 text-white p-2.5 rounded-lg transition-colors">
-                <Plus size={18} />
-              </button>
+        {/* Departure & Destinations */}
+        <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+          {/* Departure */}
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-sm text-gray-700 flex items-center gap-2">
+                <Bike size={16} /> Departure
+              </h2>
+              {!editingDeparture && event.startPointAddress && (
+                <button onClick={() => setEditingDeparture(true)}
+                  className="text-xs text-gray-400 hover:text-green-600 font-medium">
+                  Change
+                </button>
+              )}
             </div>
-          </form>
+            {editingDeparture ? (
+              <div className="space-y-2">
+                <PlacesAutocomplete
+                  placeholder="Search for start location..."
+                  onSelect={place => setPendingDeparture({ name: place.name, address: place.address })}
+                />
+                {pendingDeparture && <p className="text-xs text-gray-400">{pendingDeparture.address}</p>}
+                <div className="flex gap-2">
+                  <button onClick={() => { setEditingDeparture(false); setPendingDeparture(null) }}
+                    className="flex-1 border border-gray-200 text-gray-600 py-1.5 rounded-lg text-xs hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button onClick={saveDeparture} disabled={!pendingDeparture}
+                    className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white py-1.5 rounded-lg text-xs font-medium">
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : event.startPointAddress ? (
+              <p className="text-sm text-gray-800">{event.startPointName || event.startPointAddress}</p>
+            ) : (
+              <button onClick={() => setEditingDeparture(true)}
+                className="text-sm text-green-600 hover:text-green-700 font-medium">
+                + Set departure point
+              </button>
+            )}
+          </div>
+
+          {/* Destinations */}
+          <div className="p-5">
+            <h2 className="font-semibold text-sm text-gray-700 mb-4 flex items-center gap-2">
+              <MapPin size={16} /> Destinations
+            </h2>
+            {destinations.length === 0 && <p className="text-sm text-gray-400 mb-4">No destinations yet</p>}
+            <div className="space-y-3 mb-4">
+              {destinations.map(dest => {
+                const votes = voteTallies[dest.id] || 0
+                const isFinal = event.finalDestinationId === dest.id
+                return (
+                  <div key={dest.id} className={`flex items-center gap-3 p-3 rounded-lg border ${isFinal ? 'border-green-400 bg-green-50' : 'border-gray-100 bg-gray-50'}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{dest.name}</span>
+                        {isFinal && <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">FINAL</span>}
+                        {votes > 0 && <span className="text-xs text-gray-500">{votes} vote{votes !== 1 ? 's' : ''}</span>}
+                      </div>
+                      {(dest.address && event.startPointAddress
+                        ? buildBikeDirectionsUrl(event.startPointAddress, dest.address)
+                        : dest.mapsUrl) && (
+                        <a
+                          href={dest.address && event.startPointAddress
+                            ? buildBikeDirectionsUrl(event.startPointAddress, dest.address)
+                            : dest.mapsUrl!}
+                          target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-green-600 hover:underline flex items-center gap-1 mt-0.5">
+                          <ExternalLink size={11} /> Bike directions
+                        </a>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {!isFinal && (
+                        <button onClick={() => selectDestination(dest.id)}
+                          className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2.5 py-1 rounded-lg font-medium transition-colors">
+                          Select
+                        </button>
+                      )}
+                      <button onClick={() => deleteDestination(dest.id)}
+                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <form onSubmit={addDestination} className="space-y-2">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <PlacesAutocomplete
+                    placeholder="Search for a destination..."
+                    onSelect={(place: PlaceResult) => setNewDest(d => ({ ...d, name: place.name, address: place.address }))}
+                  />
+                  {newDest.address && (
+                    <p className="text-xs text-gray-400 mt-1 px-1">{newDest.address}</p>
+                  )}
+                </div>
+                <button type="submit" className="self-start bg-green-600 hover:bg-green-700 text-white p-2.5 rounded-lg transition-colors">
+                  <Plus size={18} />
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
 
         {/* SMS Actions */}
@@ -601,30 +528,26 @@ export default function EventAdmin() {
 
         {/* Delegation */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-sm text-gray-700 flex items-center gap-2">
-              <UserCheck size={16} /> Delegate Admin Access
-            </h2>
+          <h2 className="font-semibold text-sm text-gray-700 mb-3 flex items-center gap-2">
+            <UserCheck size={16} /> Send Admin Access
+          </h2>
+          <form onSubmit={sendDelegate} className="flex gap-2">
+            <input
+              type="tel"
+              placeholder="Phone number"
+              value={delegatePhone}
+              onChange={e => setDelegatePhone(e.target.value)}
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+            />
             <button
-              onClick={() => setShowDelegateModal(true)}
-              className="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-colors"
+              type="submit"
+              disabled={delegateSending || !delegatePhone.trim()}
+              className="bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors"
             >
-              <Plus size={14} /> Add Delegate
+              <Send size={14} /> Send
             </button>
-          </div>
-          <p className="text-xs text-gray-400 mb-3">Select a rider — they'll get the admin link via SMS.</p>
-          {data.delegates && data.delegates.length > 0 ? (
-            <div className="space-y-1">
-              {data.delegates.map(d => (
-                <div key={d.id} className="flex items-center gap-2 text-sm py-1.5 border-b border-gray-50 last:border-0">
-                  <UserCheck size={13} className="text-green-500 flex-shrink-0" />
-                  <span className="font-medium">{d.delegateName}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-gray-400">No delegates yet</p>
-          )}
+          </form>
+          <p className="text-xs text-gray-400 mt-2">They'll receive the event admin link via SMS.</p>
         </div>
 
         {/* Cancel Event */}

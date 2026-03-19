@@ -74,9 +74,12 @@ export default function Signup() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-50 to-white">
+    <div className="min-h-screen relative" style={{ backgroundImage: 'url(/bon_bike.jpg)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
+      <div className="absolute inset-0 bg-white/60" />
+      {/* Content sits above the overlay */}
+      <div className="relative z-10">
       {/* Header */}
-      <div className="bg-green-600 text-white px-4 py-8 text-center">
+      <div className="bg-green-600/90 text-white px-4 py-8 text-center">
         <div className="flex items-center justify-center gap-3 mb-2">
           <Bike size={40} />
           <h1 className="text-3xl font-bold">Bike Party</h1>
@@ -204,6 +207,7 @@ export default function Signup() {
         <p className="text-center text-xs text-gray-400 pb-4">
           Your phone number is only used for ride notifications. No spam.
         </p>
+      </div>
       </div>
     </div>
   )

@@ -62,14 +62,6 @@ export function runMigrations() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS event_admins (
-      id TEXT PRIMARY KEY,
-      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-      member_id TEXT REFERENCES members(id),
-      delegate_name TEXT NOT NULL,
-      token TEXT NOT NULL UNIQUE,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
   `)
 
   // Safe migrations for new columns (no-op if already exists)
@@ -78,6 +70,7 @@ export function runMigrations() {
     "ALTER TABLE events ADD COLUMN start_point_address TEXT",
     "ALTER TABLE destinations ADD COLUMN address TEXT",
     "ALTER TABLE ride_suggestions ADD COLUMN address TEXT",
+    "ALTER TABLE events ADD COLUMN event_token TEXT",
   ]
   for (const sql of alterations) {
     try { sqlite.exec(sql) } catch { /* column already exists */ }

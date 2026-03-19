@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { db } from '../db.js'
-import { members, events, rsvps, destinations, eventAdmins } from '../schema.js'
+import { members, events, rsvps, destinations } from '../schema.js'
 import { eq, and } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
 import { parseInboundSms } from '../sms.js'
@@ -79,13 +79,9 @@ twilioRouter.get('/event-token/:eventId', async (req, res) => {
     const token = req.query.token as string
     if (!token) return res.status(400).json({ error: 'token required' })
 
-    const delegate = await db.query.eventAdmins.findFirst({
-      where: and(eq(eventAdmins.eventId, eventId), eq(eventAdmins.token, token))
-    })
-    if (!delegate) return res.status(401).json({ error: 'Invalid token' })
-
-    // Return event data for the delegate
     const event = await db.query.events.findFirst({ where: eq(events.id, eventId) })
+    if (!event?.eventToken || event.eventToken !== token) return res.status(401).json({ error: 'Invalid token' })
+
     const dests = await db.select().from(destinations).where(eq(destinations.eventId, eventId))
     const allRsvps = await db.select().from(rsvps).where(eq(rsvps.eventId, eventId))
     const allMembers = await db.select().from(members)
@@ -96,7 +92,7 @@ twilioRouter.get('/event-token/:eventId', async (req, res) => {
       destinationVote: dests.find(d => d.id === r.destinationVoteId),
     }))
 
-    res.json({ event, destinations: dests, rsvps: rsvpList, delegateName: delegate.delegateName })
+    res.json({ event, destinations: dests, rsvps: rsvpList })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
   }

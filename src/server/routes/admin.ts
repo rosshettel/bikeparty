@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { db } from '../db.js'
-import { events, destinations, rsvps, members, rideSuggestions, eventAdmins } from '../schema.js'
+import { events, destinations, rsvps, members, rideSuggestions } from '../schema.js'
 import { eq, and, desc } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
 import { sendInvites, sendBlast, sendBlastToAll, createGroupChat } from '../sms.js'
@@ -27,12 +27,9 @@ async function requireAdminOrDelegate(req: Request, res: Response, next: NextFun
   const eventToken = (req.headers['x-event-token'] as string) || (req.query.eventToken as string)
   const eventId = req.params.id
   if (eventToken && eventId) {
-    const delegate = await db.query.eventAdmins.findFirst({
-      where: and(eq(eventAdmins.eventId, eventId), eq(eventAdmins.token, eventToken))
-    })
-    if (delegate) {
+    const event = await db.query.events.findFirst({ where: eq(events.id, eventId) })
+    if (event?.eventToken && event.eventToken === eventToken) {
       ;(req as any).isAdmin = false
-      ;(req as any).delegateName = delegate.delegateName
       return next()
     }
   }
@@ -65,6 +62,7 @@ adminRouter.post('/events', requireAdmin, async (req, res) => {
       description: description?.trim() || null,
       startPointName: startPointName?.trim() || null,
       startPointAddress: startPointAddress?.trim() || null,
+      eventToken: uuidv4(),
     }
     await db.insert(events).values(event)
     res.json(event)
@@ -81,7 +79,6 @@ adminRouter.get('/events/:id', requireAdminOrDelegate, async (req, res) => {
     const dests = await db.select().from(destinations).where(eq(destinations.eventId, event.id))
     const allRsvps = await db.select().from(rsvps).where(eq(rsvps.eventId, event.id))
     const allMembers = await db.select().from(members)
-    const delegates = await db.select().from(eventAdmins).where(eq(eventAdmins.eventId, event.id))
 
     const rsvpList = allRsvps.map(r => ({
       ...r,
@@ -89,7 +86,7 @@ adminRouter.get('/events/:id', requireAdminOrDelegate, async (req, res) => {
       destinationVote: dests.find(d => d.id === r.destinationVoteId),
     }))
 
-    res.json({ event, destinations: dests, rsvps: rsvpList, delegates })
+    res.json({ event, destinations: dests, rsvps: rsvpList })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
   }
@@ -207,29 +204,29 @@ adminRouter.post('/events/:id/cancel', requireAdmin, async (req, res) => {
 
 adminRouter.post('/events/:id/delegate', requireAdmin, async (req, res) => {
   try {
-    const { memberId } = req.body
-    if (!memberId) return res.status(400).json({ error: 'memberId required' })
+    const { phone } = req.body
+    if (!phone?.trim()) return res.status(400).json({ error: 'phone required' })
 
-    const member = await db.query.members.findFirst({ where: eq(members.id, memberId) })
-    if (!member) return res.status(404).json({ error: 'Member not found' })
+    const event = await db.query.events.findFirst({ where: eq(events.id, req.params.id) })
+    if (!event) return res.status(404).json({ error: 'Event not found' })
 
-    const token = uuidv4()
-    await db.insert(eventAdmins).values({
-      id: uuidv4(),
-      eventId: req.params.id,
-      memberId: member.id,
-      delegateName: member.name,
-      token,
-    })
+    // Ensure the event has a token; generate one if missing (for events created before this feature)
+    let token = event.eventToken
+    if (!token) {
+      token = uuidv4()
+      await db.update(events).set({ eventToken: token }).where(eq(events.id, req.params.id))
+    }
 
     const baseUrl = process.env.BASE_URL || 'http://localhost:3001'
     const link = `${baseUrl}/event-admin/${req.params.id}?token=${token}`
 
-    const event = await db.query.events.findFirst({ where: eq(events.id, req.params.id) })
-    const { sendSms } = await import('../sms.js')
-    await sendSms(member.phone, `Hey ${member.name}! You've been given admin access for "${event?.title}". Manage it here: ${link}`)
+    const normalizedPhone = phone.trim().replace(/\D/g, '')
+    const e164 = normalizedPhone.startsWith('1') ? `+${normalizedPhone}` : `+1${normalizedPhone}`
 
-    res.json({ success: true, link, delegateName: member.name })
+    const { sendSms } = await import('../sms.js')
+    await sendSms(e164, `You've been given admin access for "${event.title}". Manage it here: ${link}`)
+
+    res.json({ success: true, link })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
   }
