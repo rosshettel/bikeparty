@@ -75,16 +75,16 @@ export default function Signup() {
 
   return (
     <div className="min-h-screen relative" style={{ backgroundImage: 'url(/bon_bike.jpg)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
-      <div className="absolute inset-0 bg-white/60" />
+      <div className="absolute inset-0 bg-black/50" />
       {/* Content sits above the overlay */}
       <div className="relative z-10">
       {/* Header */}
-      <div className="bg-green-600/90 text-white px-4 py-8 text-center">
+      <div className="px-4 py-12 text-center">
         <div className="flex items-center justify-center gap-3 mb-2">
-          <Bike size={40} />
-          <h1 className="text-3xl font-bold">Bike Party</h1>
+          <Bike size={40} className="text-amber-400" />
+          <h1 className="text-4xl font-bold text-white tracking-tight">Bike Party</h1>
         </div>
-        <p className="text-green-100 text-lg">Group rides, good vibes</p>
+        <p className="text-white/70 text-lg">Group rides, good vibes</p>
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-8 space-y-8">
@@ -93,16 +93,16 @@ export default function Signup() {
         )}
 
         {/* Sign-up section */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-xl font-bold mb-1">Join the Crew</h2>
-          <p className="text-gray-500 text-sm mb-5">Add yourself and anyone riding with you. We'll text you before rides.</p>
+        <div className="bg-white/15 backdrop-blur rounded-2xl shadow-lg border border-white/20 p-6">
+          <h2 className="text-xl font-bold mb-1 text-white">Join the Crew</h2>
+          <p className="text-white/70 text-sm mb-5">Add yourself and anyone riding with you. We'll text you before rides.</p>
 
           {submittedMembers ? (
             <div className="text-center py-6">
               <div className="text-4xl mb-3">🎉</div>
-              <p className="font-semibold text-green-700">You're in! See you on the road.</p>
+              <p className="font-semibold text-gray-800">You're in! See you on the road.</p>
               <button
-                className="mt-4 text-sm text-green-600 underline"
+                className="mt-4 text-sm text-amber-600 underline"
                 onClick={() => setSubmittedMembers(false)}
               >
                 Add more people
@@ -118,14 +118,14 @@ export default function Signup() {
                       placeholder="Name"
                       value={person.name}
                       onChange={e => updatePerson(i, 'name', e.target.value)}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
                     />
                     <input
                       type="tel"
                       placeholder="Phone number"
                       value={person.phone}
                       onChange={e => updatePerson(i, 'phone', e.target.value)}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
                     />
                   </div>
                   {people.length > 1 && (
@@ -143,7 +143,7 @@ export default function Signup() {
               <button
                 type="button"
                 onClick={addPerson}
-                className="flex items-center gap-2 text-sm text-green-600 hover:text-green-700 font-medium py-1"
+                className="flex items-center gap-2 text-sm text-amber-600 hover:text-amber-700 font-medium py-1"
               >
                 <Plus size={16} /> Add another rider
               </button>
@@ -151,7 +151,7 @@ export default function Signup() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
               >
                 <Send size={18} />
                 {loading ? 'Signing up...' : 'Sign Me Up!'}
@@ -161,16 +161,16 @@ export default function Signup() {
         </div>
 
         {/* Suggestion section */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-xl font-bold mb-1">Suggest a Destination</h2>
-          <p className="text-gray-500 text-sm mb-5">Got a great ride spot? Share it with the crew.</p>
+        <div className="bg-white/15 backdrop-blur rounded-2xl shadow-lg border border-white/20 p-6">
+          <h2 className="text-xl font-bold mb-1 text-white">Suggest a Destination</h2>
+          <p className="text-white/70 text-sm mb-5">Got a great ride spot? Share it with the crew.</p>
 
           {submittedSuggestion ? (
             <div className="text-center py-6">
               <div className="text-4xl mb-3">🗺️</div>
-              <p className="font-semibold text-green-700">Thanks for the suggestion!</p>
+              <p className="font-semibold text-gray-800">Thanks for the suggestion!</p>
               <button
-                className="mt-4 text-sm text-green-600 underline"
+                className="mt-4 text-sm text-amber-600 underline"
                 onClick={() => setSubmittedSuggestion(false)}
               >
                 Add another
@@ -190,12 +190,12 @@ export default function Signup() {
                 value={suggestion.description}
                 onChange={e => setSuggestion(s => ({ ...s, description: e.target.value }))}
                 rows={2}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
               />
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-white border-2 border-green-600 hover:bg-green-50 disabled:opacity-50 text-green-700 font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                className="w-full bg-white border-2 border-amber-500 hover:bg-amber-50 disabled:opacity-50 text-amber-700 font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
               >
                 <MapPin size={18} />
                 {loading ? 'Submitting...' : 'Submit Suggestion'}
@@ -204,7 +204,7 @@ export default function Signup() {
           )}
         </div>
 
-        <p className="text-center text-xs text-gray-400 pb-4">
+        <p className="text-center text-xs text-white/50 pb-4">
           Your phone number is only used for ride notifications. No spam.
         </p>
       </div>
