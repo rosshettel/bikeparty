@@ -71,6 +71,10 @@ export function runMigrations() {
     "ALTER TABLE destinations ADD COLUMN address TEXT",
     "ALTER TABLE ride_suggestions ADD COLUMN address TEXT",
     "ALTER TABLE events ADD COLUMN event_token TEXT",
+    "ALTER TABLE events ADD COLUMN scheduled_invite_at TEXT",
+    "ALTER TABLE events ADD COLUMN scheduled_day_of_confirm_at TEXT",
+    "ALTER TABLE events ADD COLUMN scheduled_group_chat_at TEXT",
+    "ALTER TABLE events ADD COLUMN day_of_confirm_sent_at TEXT",
   ]
   for (const sql of alterations) {
     try { sqlite.exec(sql) } catch { /* column already exists */ }

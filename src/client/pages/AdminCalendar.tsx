@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Calendar, dateFnsLocalizer, Event as RBCEvent } from 'react-big-calendar'
-import { format, parse, startOfWeek, getDay, addWeeks, addMonths, parseISO, isAfter, isBefore, isEqual } from 'date-fns'
+import { format, parse, startOfWeek, getDay, addWeeks, addMonths, parseISO, isAfter, isBefore } from 'date-fns'
 import { enUS } from 'date-fns/locale'
 import { Link } from 'react-router-dom'
 import { Bike, Plus, LogOut, Users, MapPin, X, Repeat } from 'lucide-react'
@@ -46,6 +46,27 @@ interface NewEventForm {
   recurring: boolean
   frequency: 'weekly' | 'biweekly' | 'monthly'
   repeatUntil: string
+  headsUpDaysBefore: number
+  dayOfConfirmHour: number
+  groupChatHour: number
+}
+
+function computeScheduledTimes(eventDate: string, headsUpDaysBefore: number, dayOfConfirmHour: number, groupChatHour: number) {
+  const [year, month, day] = eventDate.split('-').map(Number)
+  const headsUpDate = new Date(year, month - 1, day - headsUpDaysBefore, 9, 0, 0)
+  const dayOfConfirmDate = new Date(year, month - 1, day, dayOfConfirmHour, 0, 0)
+  const groupChatDate = new Date(year, month - 1, day, groupChatHour, 0, 0)
+  return {
+    scheduledInviteAt: headsUpDate.toISOString(),
+    scheduledDayOfConfirmAt: dayOfConfirmDate.toISOString(),
+    scheduledGroupChatAt: groupChatDate.toISOString(),
+  }
+}
+
+const HOUR_OPTIONS = Array.from({ length: 9 }, (_, i) => i + 9) // 9–17
+function formatHour(h: number) {
+  if (h === 12) return '12:00 PM'
+  return h < 12 ? `${h}:00 AM` : `${h - 12}:00 PM`
 }
 
 function getRecurringDates(startDate: string, frequency: string, repeatUntil: string): string[] {
@@ -72,7 +93,9 @@ export default function AdminCalendar() {
     title: '', eventDate: '', meetTime: '18:00', description: '',
     startPointName: '', startPointAddress: '',
     recurring: false, frequency: 'weekly', repeatUntil: '',
+    headsUpDaysBefore: 3, dayOfConfirmHour: 10, groupChatHour: 17,
   })
+  const [editingSchedule, setEditingSchedule] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [stats, setStats] = useState({ members: 0, suggestions: 0 })
@@ -131,6 +154,7 @@ export default function AdminCalendar() {
 
     try {
       for (const date of dates) {
+        const scheduled = computeScheduledTimes(date, form.headsUpDaysBefore, form.dayOfConfirmHour, form.groupChatHour)
         const res = await apiFetch('/events', {
           method: 'POST',
           body: JSON.stringify({
@@ -140,6 +164,7 @@ export default function AdminCalendar() {
             description: form.description,
             startPointName: form.startPointName || undefined,
             startPointAddress: form.startPointAddress || undefined,
+            ...scheduled,
           }),
         })
         if (!res.ok) {
@@ -150,7 +175,7 @@ export default function AdminCalendar() {
         }
       }
       await loadEvents()
-      setForm({ title: '', eventDate: '', meetTime: '18:00', description: '', startPointName: '', startPointAddress: '', recurring: false, frequency: 'weekly', repeatUntil: '' })
+      setForm({ title: '', eventDate: '', meetTime: '18:00', description: '', startPointName: '', startPointAddress: '', recurring: false, frequency: 'weekly', repeatUntil: '', headsUpDaysBefore: 3, dayOfConfirmHour: 10, groupChatHour: 17 })
       setShowNewEvent(false)
     } catch (err: any) {
       setError(err.message)
@@ -295,6 +320,78 @@ export default function AdminCalendar() {
                   />
                 </div>
 
+                {/* Notification schedule */}
+                <div className="border border-gray-100 rounded-xl p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-700">Notification Schedule</p>
+                    {!editingSchedule && (
+                      <button type="button" onClick={() => setEditingSchedule(true)}
+                        className="text-xs text-gray-400 hover:text-green-600 font-medium">
+                        Edit
+                      </button>
+                    )}
+                  </div>
+                  {editingSchedule ? (
+                    <>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Heads-up + vote</label>
+                        <select
+                          value={form.headsUpDaysBefore}
+                          onChange={e => setForm(f => ({ ...f, headsUpDaysBefore: Number(e.target.value) }))}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                        >
+                          {[7, 6, 5, 4, 3, 2, 1].map(d => (
+                            <option key={d} value={d}>{d} day{d !== 1 ? 's' : ''} before</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Day-of confirmation</label>
+                        <select
+                          value={form.dayOfConfirmHour}
+                          onChange={e => setForm(f => ({ ...f, dayOfConfirmHour: Number(e.target.value) }))}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                        >
+                          {HOUR_OPTIONS.map(h => (
+                            <option key={h} value={h}>{formatHour(h)}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Group chat creation</label>
+                        <select
+                          value={form.groupChatHour}
+                          onChange={e => setForm(f => ({ ...f, groupChatHour: Number(e.target.value) }))}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                        >
+                          {HOUR_OPTIONS.map(h => (
+                            <option key={h} value={h}>{formatHour(h)}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <button type="button" onClick={() => setEditingSchedule(false)}
+                        className="w-full border border-gray-200 text-gray-600 py-1.5 rounded-lg text-xs hover:bg-gray-50">
+                        Done
+                      </button>
+                    </>
+                  ) : (
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Heads-up + vote</span>
+                        <span className="text-gray-700">{form.headsUpDaysBefore} day{form.headsUpDaysBefore !== 1 ? 's' : ''} before</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Day-of confirmation</span>
+                        <span className="text-gray-700">{formatHour(form.dayOfConfirmHour)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Group chat creation</span>
+                        <span className="text-gray-700">{formatHour(form.groupChatHour)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Recurring toggle */}
                 <div className="border border-gray-100 rounded-xl p-3 space-y-3">
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -343,7 +440,7 @@ export default function AdminCalendar() {
                 </div>
 
                 <div className="flex gap-3 pt-1">
-                  <button type="button" onClick={() => { setShowNewEvent(false); setError('') }}
+                  <button type="button" onClick={() => { setShowNewEvent(false); setError(''); setEditingSchedule(false) }}
                     className="flex-1 border border-gray-200 text-gray-700 py-2.5 rounded-xl font-medium hover:bg-gray-50 transition-colors">
                     Cancel
                   </button>

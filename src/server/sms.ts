@@ -192,6 +192,43 @@ export async function createGroupChat(eventId: string): Promise<string | null> {
   }
 }
 
+export async function sendDayOfConfirmation(eventId: string): Promise<number> {
+  const event = await db.query.events.findFirst({ where: eq(events.id, eventId) })
+  if (!event) return 0
+
+  const allMembers = await db.select().from(members)
+  const eventDests = await db.select().from(destinations).where(eq(destinations.eventId, eventId))
+  const client = getClient()
+  let sent = 0
+
+  for (const member of allMembers) {
+    let msg = `Hey ${member.name}! 🚲 Bike Party is TONIGHT: ${event.title}\n`
+    msg += `📅 ${event.eventDate} at ${event.meetTime}\n`
+    if (event.startPointName) msg += `📍 Starting from: ${event.startPointName}\n`
+    msg += `\n`
+
+    if (eventDests.length > 0) {
+      msg += `Reply YES + destination pick to confirm you're coming:\n`
+      eventDests.forEach((d, i) => {
+        msg += `YES ${i + 1} — ${d.name}\n`
+      })
+      msg += `YES (no preference)\nNO (can't make it)`
+    } else {
+      msg += `Reply YES to confirm you're coming or NO if you can't make it.`
+    }
+
+    try {
+      await client.messages.create({ from: fromNumber!, to: member.phone, body: msg })
+      sent++
+    } catch (err) {
+      console.error(`Failed to send day-of confirm to ${member.phone}:`, err)
+    }
+  }
+
+  await db.update(events).set({ dayOfConfirmSentAt: new Date().toISOString() }).where(eq(events.id, eventId))
+  return sent
+}
+
 export function parseInboundSms(body: string): { status: 'yes' | 'no'; voteIndex: number | null } {
   const upper = body.toUpperCase().trim()
   if (upper.startsWith('NO')) {

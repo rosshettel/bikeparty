@@ -1,52 +1,80 @@
 import cron from 'node-cron'
 import { db } from './db.js'
 import { events } from './schema.js'
-import { eq, and } from 'drizzle-orm'
-import { sendInvites, createGroupChat } from './sms.js'
-import { format, addDays, parseISO, isToday, isSameDay } from 'date-fns'
+import { eq, and, lte, isNull, isNotNull } from 'drizzle-orm'
+import { sendInvites, sendDayOfConfirmation, createGroupChat } from './sms.js'
+import { format, addDays } from 'date-fns'
 
 export function startScheduler() {
-  // Daily at 9am: send 2-day invites
+  // Every minute: fire scheduled notifications whose datetime has arrived
+  cron.schedule('* * * * *', async () => {
+    const now = new Date().toISOString()
+
+    try {
+      // Heads-up + vote (scheduled)
+      const needInvite = await db.select().from(events).where(
+        and(eq(events.status, 'active'), isNotNull(events.scheduledInviteAt), lte(events.scheduledInviteAt, now), isNull(events.invitesSentAt))
+      )
+      for (const event of needInvite) {
+        console.log(`[Scheduler] Sending scheduled invites for: ${event.title}`)
+        await sendInvites(event.id)
+      }
+
+      // Day-of confirmation (scheduled)
+      const needDayOf = await db.select().from(events).where(
+        and(eq(events.status, 'active'), isNotNull(events.scheduledDayOfConfirmAt), lte(events.scheduledDayOfConfirmAt, now), isNull(events.dayOfConfirmSentAt))
+      )
+      for (const event of needDayOf) {
+        console.log(`[Scheduler] Sending day-of confirmation for: ${event.title}`)
+        await sendDayOfConfirmation(event.id)
+      }
+
+      // Group chat creation (scheduled)
+      const needGroupChat = await db.select().from(events).where(
+        and(eq(events.status, 'active'), isNotNull(events.scheduledGroupChatAt), lte(events.scheduledGroupChatAt, now), isNull(events.groupChatCreatedAt))
+      )
+      for (const event of needGroupChat) {
+        console.log(`[Scheduler] Creating scheduled group chat for: ${event.title}`)
+        await createGroupChat(event.id)
+      }
+    } catch (err) {
+      console.error('[Scheduler] Error in scheduled notification check:', err)
+    }
+  })
+
+  // Legacy fallback: daily at 9am for events without scheduled times
   cron.schedule('0 9 * * *', async () => {
-    console.log('[Scheduler] Checking for events in 2 days...')
+    console.log('[Scheduler] Legacy: checking for events in 2 days...')
     try {
       const twoDaysFromNow = format(addDays(new Date(), 2), 'yyyy-MM-dd')
-      const upcomingEvents = await db.select().from(events)
-        .where(and(eq(events.status, 'active'), eq(events.eventDate, twoDaysFromNow)))
-
+      const upcomingEvents = await db.select().from(events).where(
+        and(eq(events.status, 'active'), eq(events.eventDate, twoDaysFromNow), isNull(events.invitesSentAt), isNull(events.scheduledInviteAt))
+      )
       for (const event of upcomingEvents) {
-        if (!event.invitesSentAt) {
-          console.log(`[Scheduler] Sending invites for event: ${event.title}`)
-          const sent = await sendInvites(event.id)
-          console.log(`[Scheduler] Sent ${sent} invites for ${event.title}`)
-        }
+        console.log(`[Scheduler] Legacy: sending invites for ${event.title}`)
+        await sendInvites(event.id)
       }
     } catch (err) {
-      console.error('[Scheduler] Error sending 2-day invites:', err)
+      console.error('[Scheduler] Legacy invite error:', err)
     }
   })
 
-  // Daily at 4pm: create group chat for today's events
+  // Legacy fallback: daily at 4pm for events without scheduled group chat time
   cron.schedule('0 16 * * *', async () => {
-    console.log('[Scheduler] Checking for group chats to create...')
+    console.log('[Scheduler] Legacy: checking for group chats to create...')
     try {
       const today = format(new Date(), 'yyyy-MM-dd')
-      const todayEvents = await db.select().from(events)
-        .where(and(eq(events.status, 'active'), eq(events.eventDate, today)))
-
+      const todayEvents = await db.select().from(events).where(
+        and(eq(events.status, 'active'), eq(events.eventDate, today), isNull(events.groupChatCreatedAt), isNull(events.scheduledGroupChatAt))
+      )
       for (const event of todayEvents) {
-        if (!event.groupChatCreatedAt) {
-          console.log(`[Scheduler] Creating group chat for: ${event.title}`)
-          const sid = await createGroupChat(event.id)
-          if (sid) {
-            console.log(`[Scheduler] Group chat created: ${sid}`)
-          }
-        }
+        console.log(`[Scheduler] Legacy: creating group chat for ${event.title}`)
+        await createGroupChat(event.id)
       }
     } catch (err) {
-      console.error('[Scheduler] Error creating group chats:', err)
+      console.error('[Scheduler] Legacy group chat error:', err)
     }
   })
 
-  console.log('[Scheduler] Started (2-day invites at 9am, group chat at 4pm)')
+  console.log('[Scheduler] Started (per-minute scheduled checks + legacy daily fallbacks)')
 }

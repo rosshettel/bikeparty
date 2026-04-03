@@ -35,7 +35,35 @@ interface BikeEvent {
   startPointAddress?: string
   invitesSentAt?: string
   groupChatCreatedAt?: string
+  dayOfConfirmSentAt?: string
   conversationSid?: string
+  scheduledInviteAt?: string
+  scheduledDayOfConfirmAt?: string
+  scheduledGroupChatAt?: string
+}
+
+const HOUR_OPTIONS = Array.from({ length: 9 }, (_, i) => i + 9)
+function formatHour(h: number) {
+  if (h === 12) return '12:00 PM'
+  return h < 12 ? `${h}:00 AM` : `${h - 12}:00 PM`
+}
+function getLocalHour(iso: string): number {
+  return new Date(iso).getHours()
+}
+function getDaysBefore(eventDate: string, iso: string): number {
+  const [y, m, d] = eventDate.split('-').map(Number)
+  const evDay = new Date(y, m - 1, d)
+  const schDay = new Date(iso)
+  const schDateOnly = new Date(schDay.getFullYear(), schDay.getMonth(), schDay.getDate())
+  return Math.round((evDay.getTime() - schDateOnly.getTime()) / 86400000)
+}
+function computeScheduledTimes(eventDate: string, headsUpDaysBefore: number, dayOfConfirmHour: number, groupChatHour: number) {
+  const [year, month, day] = eventDate.split('-').map(Number)
+  return {
+    scheduledInviteAt: new Date(year, month - 1, day - headsUpDaysBefore, 9, 0, 0).toISOString(),
+    scheduledDayOfConfirmAt: new Date(year, month - 1, day, dayOfConfirmHour, 0, 0).toISOString(),
+    scheduledGroupChatAt: new Date(year, month - 1, day, groupChatHour, 0, 0).toISOString(),
+  }
 }
 
 interface EventData {
@@ -110,6 +138,10 @@ export default function EventAdmin() {
   // Departure point editing
   const [editingDeparture, setEditingDeparture] = useState(false)
   const [pendingDeparture, setPendingDeparture] = useState<{ name: string; address: string } | null>(null)
+
+  // Notification schedule editing
+  const [editingSchedule, setEditingSchedule] = useState(false)
+  const [scheduleForm, setScheduleForm] = useState({ headsUpDaysBefore: 3, dayOfConfirmHour: 10, groupChatHour: 17 })
 
   // Forms
   const [newDest, setNewDest] = useState({ name: '', address: '', mapsUrl: '' })
@@ -188,6 +220,19 @@ export default function EventAdmin() {
       body: JSON.stringify({ startPointName: pendingDeparture.name, startPointAddress: pendingDeparture.address }),
     })
     if (res.ok) { setEditingDeparture(false); setPendingDeparture(null); await load(); flash('Departure point updated') }
+  }
+
+  const openEditSchedule = () => {
+    if (event.scheduledInviteAt) setScheduleForm(f => ({ ...f, headsUpDaysBefore: getDaysBefore(event.eventDate, event.scheduledInviteAt!) }))
+    if (event.scheduledDayOfConfirmAt) setScheduleForm(f => ({ ...f, dayOfConfirmHour: getLocalHour(event.scheduledDayOfConfirmAt!) }))
+    if (event.scheduledGroupChatAt) setScheduleForm(f => ({ ...f, groupChatHour: getLocalHour(event.scheduledGroupChatAt!) }))
+    setEditingSchedule(true)
+  }
+
+  const saveSchedule = async () => {
+    const times = computeScheduledTimes(event.eventDate, scheduleForm.headsUpDaysBefore, scheduleForm.dayOfConfirmHour, scheduleForm.groupChatHour)
+    const res = await adminFetch(`/events/${id}`, { method: 'PATCH', body: JSON.stringify(times) })
+    if (res.ok) { setEditingSchedule(false); await load(); flash('Notification schedule updated') }
   }
 
   const addDestination = async (e: React.FormEvent) => {
@@ -466,6 +511,91 @@ export default function EventAdmin() {
             </form>
           </div>
         </div>
+
+        {/* Notification Schedule */}
+        {!isCancelled && (
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-sm text-gray-700 flex items-center gap-2">
+                <Send size={16} /> Notification Schedule
+              </h2>
+              {!editingSchedule && (
+                <button onClick={openEditSchedule} className="text-xs text-gray-400 hover:text-green-600 font-medium">Edit</button>
+              )}
+            </div>
+            {editingSchedule ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Heads-up + vote</label>
+                  <select
+                    value={scheduleForm.headsUpDaysBefore}
+                    onChange={e => setScheduleForm(f => ({ ...f, headsUpDaysBefore: Number(e.target.value) }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                  >
+                    {[7, 6, 5, 4, 3, 2, 1].map(d => (
+                      <option key={d} value={d}>{d} day{d !== 1 ? 's' : ''} before</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Day-of confirmation</label>
+                  <select
+                    value={scheduleForm.dayOfConfirmHour}
+                    onChange={e => setScheduleForm(f => ({ ...f, dayOfConfirmHour: Number(e.target.value) }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                  >
+                    {HOUR_OPTIONS.map(h => (
+                      <option key={h} value={h}>{formatHour(h)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Group chat creation</label>
+                  <select
+                    value={scheduleForm.groupChatHour}
+                    onChange={e => setScheduleForm(f => ({ ...f, groupChatHour: Number(e.target.value) }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                  >
+                    {HOUR_OPTIONS.map(h => (
+                      <option key={h} value={h}>{formatHour(h)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => setEditingSchedule(false)}
+                    className="flex-1 border border-gray-200 text-gray-600 py-1.5 rounded-lg text-xs hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button onClick={saveSchedule}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white py-1.5 rounded-lg text-xs font-medium">
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Heads-up + vote</span>
+                  {event.scheduledInviteAt
+                    ? <span className="text-gray-700">{getDaysBefore(event.eventDate, event.scheduledInviteAt)} days before{event.invitesSentAt ? ' ✓' : ''}</span>
+                    : <span className="text-gray-300">not set</span>}
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Day-of confirmation</span>
+                  {event.scheduledDayOfConfirmAt
+                    ? <span className="text-gray-700">{formatHour(getLocalHour(event.scheduledDayOfConfirmAt))}{event.dayOfConfirmSentAt ? ' ✓' : ''}</span>
+                    : <span className="text-gray-300">not set</span>}
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Group chat creation</span>
+                  {event.scheduledGroupChatAt
+                    ? <span className="text-gray-700">{formatHour(getLocalHour(event.scheduledGroupChatAt))}{event.groupChatCreatedAt ? ' ✓' : ''}</span>
+                    : <span className="text-gray-300">not set</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* SMS Actions */}
         {!isCancelled && (

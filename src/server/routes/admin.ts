@@ -50,7 +50,7 @@ adminRouter.get('/events', requireAdmin, async (req, res) => {
 
 adminRouter.post('/events', requireAdmin, async (req, res) => {
   try {
-    const { title, eventDate, meetTime, description, startPointName, startPointAddress } = req.body
+    const { title, eventDate, meetTime, description, startPointName, startPointAddress, scheduledInviteAt, scheduledDayOfConfirmAt, scheduledGroupChatAt } = req.body
     if (!title?.trim() || !eventDate) {
       return res.status(400).json({ error: 'title and eventDate required' })
     }
@@ -62,6 +62,9 @@ adminRouter.post('/events', requireAdmin, async (req, res) => {
       description: description?.trim() || null,
       startPointName: startPointName?.trim() || null,
       startPointAddress: startPointAddress?.trim() || null,
+      scheduledInviteAt: scheduledInviteAt || null,
+      scheduledDayOfConfirmAt: scheduledDayOfConfirmAt || null,
+      scheduledGroupChatAt: scheduledGroupChatAt || null,
       eventToken: uuidv4(),
     }
     await db.insert(events).values(event)
@@ -94,7 +97,7 @@ adminRouter.get('/events/:id', requireAdminOrDelegate, async (req, res) => {
 
 adminRouter.patch('/events/:id', requireAdmin, async (req, res) => {
   try {
-    const { title, eventDate, meetTime, description, status, startPointName, startPointAddress } = req.body
+    const { title, eventDate, meetTime, description, status, startPointName, startPointAddress, scheduledInviteAt, scheduledDayOfConfirmAt, scheduledGroupChatAt } = req.body
     const updates: Record<string, any> = {}
     if (title !== undefined) updates.title = title
     if (eventDate !== undefined) updates.eventDate = eventDate
@@ -103,6 +106,9 @@ adminRouter.patch('/events/:id', requireAdmin, async (req, res) => {
     if (status !== undefined) updates.status = status
     if (startPointName !== undefined) updates.startPointName = startPointName
     if (startPointAddress !== undefined) updates.startPointAddress = startPointAddress
+    if (scheduledInviteAt !== undefined) updates.scheduledInviteAt = scheduledInviteAt
+    if (scheduledDayOfConfirmAt !== undefined) updates.scheduledDayOfConfirmAt = scheduledDayOfConfirmAt
+    if (scheduledGroupChatAt !== undefined) updates.scheduledGroupChatAt = scheduledGroupChatAt
     await db.update(events).set(updates).where(eq(events.id, req.params.id))
     res.json({ success: true })
   } catch (err: any) {
