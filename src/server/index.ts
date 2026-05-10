@@ -6,6 +6,7 @@ import { runMigrations } from './db.js'
 import { publicRouter } from './routes/public.js'
 import { adminRouter } from './routes/admin.js'
 import { twilioRouter } from './routes/twilio.js'
+import { rsvpRouter } from './routes/rsvp.js'
 import { startScheduler } from './scheduler.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -21,6 +22,7 @@ app.use(express.urlencoded({ extended: true })) // for Twilio webhook form data
 app.use('/api/public', publicRouter)
 app.use('/api/admin', adminRouter)
 app.use('/api/twilio', twilioRouter)
+app.use('/api/rsvp', rsvpRouter)
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ ok: true }))

@@ -45,6 +45,7 @@ export const rsvps = sqliteTable('rsvps', {
   status: text('status').notNull().default('pending'), // pending | yes | no
   destinationVoteId: text('destination_vote_id'),
   respondedAt: text('responded_at'),
+  token: text('token'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 })
 

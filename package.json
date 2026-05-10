@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev:server": "tsx watch src/server/index.ts",
+    "dev:server": "PORT=3001 node --env-file=.env --import tsx/esm --watch src/server/index.ts",
     "dev:client": "vite",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "build": "vite build && tsc -p tsconfig.server.json",
-    "start": "node dist/server/index.js"
+    "start": "node dist/server/index.js",
+    "seed:rsvp": "node --env-file=.env --import tsx/esm scripts/seed-rsvp.ts"
   },
   "dependencies": {
     "@types/google.maps": "^3.58.1",

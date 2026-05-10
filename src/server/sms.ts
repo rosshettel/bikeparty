@@ -1,4 +1,5 @@
 import twilio from 'twilio'
+import { v4 as uuidv4 } from 'uuid'
 import { db } from './db.js'
 import { members, events, destinations, rsvps } from './schema.js'
 import { eq, and } from 'drizzle-orm'
@@ -7,6 +8,33 @@ const accountSid = process.env.TWILIO_ACCOUNT_SID
 const authToken = process.env.TWILIO_AUTH_TOKEN
 const fromNumber = process.env.TWILIO_PHONE_NUMBER
 const conversationsSid = process.env.TWILIO_CONVERSATIONS_SERVICE_SID
+
+function rsvpUrl(eventId: string, token: string): string {
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3001'
+  return `${baseUrl}/rsvp/${eventId}?token=${token}`
+}
+
+/** Get-or-create RSVP for a member+event, ensuring it has a token. Returns the token. */
+async function ensureRsvp(eventId: string, memberId: string): Promise<string> {
+  const existing = await db.query.rsvps.findFirst({
+    where: and(eq(rsvps.eventId, eventId), eq(rsvps.memberId, memberId)),
+  })
+  if (existing) {
+    if (existing.token) return existing.token
+    const token = uuidv4()
+    await db.update(rsvps).set({ token }).where(eq(rsvps.id, existing.id))
+    return token
+  }
+  const token = uuidv4()
+  await db.insert(rsvps).values({
+    id: uuidv4(),
+    eventId,
+    memberId,
+    status: 'pending',
+    token,
+  })
+  return token
+}
 
 function getClient() {
   if (!accountSid || !authToken) {
@@ -25,41 +53,18 @@ export async function sendInvites(eventId: string): Promise<number> {
   if (!event) throw new Error('Event not found')
 
   const allMembers = await db.select().from(members)
-  const eventDests = await db.select().from(destinations).where(eq(destinations.eventId, eventId))
-
   const client = getClient()
   let sent = 0
 
   for (const member of allMembers) {
-    // Create or update RSVP to pending
-    const existing = await db.query.rsvps.findFirst({
-      where: and(eq(rsvps.eventId, eventId), eq(rsvps.memberId, member.id))
-    })
-    if (!existing) {
-      const { v4: uuidv4 } = await import('uuid')
-      await db.insert(rsvps).values({
-        id: uuidv4(),
-        eventId,
-        memberId: member.id,
-        status: 'pending',
-      })
-    }
+    const token = await ensureRsvp(eventId, member.id)
+    const link = rsvpUrl(eventId, token)
 
-    // Build message
     let msg = `Hey ${member.name}! 🚲 Bike Party is in 2 days: ${event.title}\n`
     msg += `📅 ${event.eventDate} at ${event.meetTime}\n\n`
     if (event.description) msg += `${event.description}\n\n`
-    msg += `Can you make it?\n`
-
-    if (eventDests.length > 0) {
-      msg += `Reply with YES + your destination pick, or NO:\n`
-      eventDests.forEach((d, i) => {
-        msg += `YES ${i + 1} — ${d.name}\n`
-      })
-      msg += `YES (no preference)\nNO (can't make it)`
-    } else {
-      msg += `Reply YES or NO`
-    }
+    msg += `Tap to RSVP and vote on the destination:\n${link}\n\n`
+    msg += `Or just reply YES / NO to confirm.`
 
     try {
       await client.messages.create({ from: fromNumber!, to: member.phone, body: msg })
@@ -69,7 +74,6 @@ export async function sendInvites(eventId: string): Promise<number> {
     }
   }
 
-  // Mark invites sent
   await db.update(events).set({ invitesSentAt: new Date().toISOString() }).where(eq(events.id, eventId))
 
   return sent
@@ -197,25 +201,18 @@ export async function sendDayOfConfirmation(eventId: string): Promise<number> {
   if (!event) return 0
 
   const allMembers = await db.select().from(members)
-  const eventDests = await db.select().from(destinations).where(eq(destinations.eventId, eventId))
   const client = getClient()
   let sent = 0
 
   for (const member of allMembers) {
+    const token = await ensureRsvp(eventId, member.id)
+    const link = rsvpUrl(eventId, token)
+
     let msg = `Hey ${member.name}! 🚲 Bike Party is TONIGHT: ${event.title}\n`
     msg += `📅 ${event.eventDate} at ${event.meetTime}\n`
     if (event.startPointName) msg += `📍 Starting from: ${event.startPointName}\n`
-    msg += `\n`
-
-    if (eventDests.length > 0) {
-      msg += `Reply YES + destination pick to confirm you're coming:\n`
-      eventDests.forEach((d, i) => {
-        msg += `YES ${i + 1} — ${d.name}\n`
-      })
-      msg += `YES (no preference)\nNO (can't make it)`
-    } else {
-      msg += `Reply YES to confirm you're coming or NO if you can't make it.`
-    }
+    msg += `\nTap to confirm and pick the destination:\n${link}\n\n`
+    msg += `Or reply YES / NO.`
 
     try {
       await client.messages.create({ from: fromNumber!, to: member.phone, body: msg })
@@ -229,14 +226,8 @@ export async function sendDayOfConfirmation(eventId: string): Promise<number> {
   return sent
 }
 
-export function parseInboundSms(body: string): { status: 'yes' | 'no'; voteIndex: number | null } {
+export function parseInboundSms(body: string): { status: 'yes' | 'no' } {
   const upper = body.toUpperCase().trim()
-  if (upper.startsWith('NO')) {
-    return { status: 'no', voteIndex: null }
-  }
-  if (upper.startsWith('YES')) {
-    const match = upper.match(/YES\s*(\d+)/)
-    return { status: 'yes', voteIndex: match ? parseInt(match[1], 10) : null }
-  }
-  return { status: 'no', voteIndex: null }
+  if (upper.startsWith('YES')) return { status: 'yes' }
+  return { status: 'no' }
 }

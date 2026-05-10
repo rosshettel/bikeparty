@@ -22,7 +22,9 @@ export default function PlacesAutocomplete({ placeholder = 'Search for a place..
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    loadMapsApi().then(() => setReady(true)).catch(console.error)
+    loadMapsApi()
+      .then(() => { if (window.google?.maps?.places) setReady(true) })
+      .catch(console.error)
   }, [])
 
   useEffect(() => {

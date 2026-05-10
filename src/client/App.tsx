@@ -5,6 +5,7 @@ import AdminCalendar from './pages/AdminCalendar'
 import EventAdmin from './pages/EventAdmin'
 import EventDelegate from './pages/EventDelegate'
 import AdminMembers from './pages/AdminMembers'
+import RsvpVote from './pages/RsvpVote'
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/admin/members" element={<AdminMembers />} />
         <Route path="/admin/events/:id" element={<EventAdmin />} />
         <Route path="/event-admin/:id" element={<EventDelegate />} />
+        <Route path="/rsvp/:eventId" element={<RsvpVote />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </BrowserRouter>
